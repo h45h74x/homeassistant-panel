@@ -13,7 +13,7 @@ from homeassistant.components.http import HomeAssistantView
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from . import passphrase as pp
-from .const import DOMAIN
+from .const import DOMAIN, hello_signal
 from .enablement import compute_enabled
 from .runtime import CATALOG
 
@@ -165,6 +165,7 @@ class HelloView(_Base):
             return _err(400, "invalid_payload", bad)
         rt.apply_hello(body)
         rt.set_enabled(compute_enabled(request.app["hass"], eid, rt))
+        async_dispatcher_send(request.app["hass"], hello_signal(device_id))
         return _dump({"contract": 1, "heartbeat_s": HEARTBEAT_S, "poll_wait_s": POLL_WAIT_S,
                       "config": rt.config(rt.enabled)})
 

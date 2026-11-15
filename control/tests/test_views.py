@@ -7,7 +7,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from homeassistant.setup import async_setup_component
 
-from custom_components.panel_control import async_setup_entry, views
+from custom_components.panel_control import views
 from custom_components.panel_control.const import DOMAIN
 
 from fake_device import CONTRACT, FakeDevice
@@ -26,9 +26,8 @@ async def setup(hass, hass_client_no_auth):
     entry = MockConfigEntry(domain=DOMAIN, unique_id="kindle_test",
                             data={"device_id": "kindle_test", "passphrase": PASS, "name": "K"})
     entry.add_to_hass(hass)
-    # config_flow.py arrives in Task 5, so drive setup directly instead of through the entry manager
     assert await async_setup_component(hass, DOMAIN, {})
-    assert await async_setup_entry(hass, entry)
+    await hass.async_block_till_done()
     client = await hass_client_no_auth()
     rt = hass.data[DOMAIN]["entries"][entry.entry_id][0]
     return client, FakeDevice(client, BASE, PASS), rt

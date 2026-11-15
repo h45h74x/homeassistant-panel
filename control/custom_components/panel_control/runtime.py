@@ -28,11 +28,12 @@ COMMAND_TTL = 300
 
 class DeviceRuntime:
     def __init__(self, device_id: str, enabled_default: Callable[[str], bool],
-                 now: Callable[[], float] = time.time) -> None:
+                 now: Callable[[], float] = lambda: time.time()) -> None:  # late-bound: freezable
         self.device_id = device_id
         self._default = enabled_default
         self._now = now
         self.declared: dict[str, dict] = {}
+        self.device: dict[str, str] = {}  # hello device block minus serial_number
         self.enabled: set[str] = set()
         self._explicit = False
         self.needs_hello = False
@@ -56,12 +57,14 @@ class DeviceRuntime:
         self._explicit = True
         self._queue = {k: v for k, v in self._queue.items() if k in self.enabled}
 
-    def restore(self, declared: list[dict]) -> None:
+    def restore(self, declared: list[dict], device: dict | None = None) -> None:
         self._declare(declared)
+        self.device = dict(device or {})
         self.needs_hello = True
 
     def apply_hello(self, hello: dict) -> None:
         self._declare(hello.get("capabilities", []))
+        self.device = {k: v for k, v in hello.get("device", {}).items() if k != "serial_number"}
         self.needs_hello = False
         self.touch()
 
