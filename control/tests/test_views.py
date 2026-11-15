@@ -192,13 +192,36 @@ async def test_command_value_formatting(setup):
 
 
 async def test_x_forwarded_for_ignored(setup):
-    # HA's own middleware rejects XFF without trusted proxies; either way a locked peer never gets in
-    client, _, _ = setup
-    bad = FakeDevice(client, BASE, "bad")
-    for _ in range(10):
-        await bad.hello()
-    for xff in ("10.9.9.9", None):
-        h = {"Authorization": f"Bearer {PASS}"} | ({"X-Forwarded-For": xff} if xff else {})
-        assert (await client.post(f"{BASE}/hello", json={}, headers=h)).status in (400, 429)
-    assert (await client.post(f"{BASE}/hello", json={}, headers={
-        "Authorization": f"Bearer {PASS}"})).status == 429
+    from types import SimpleNamespace
+
+    from custom_components.panel_control.lockout import Lockout
+
+    hass = setup[0].server.app["hass"]
+    req = SimpleNamespace(app={"hass": hass}, remote="1.2.3.4",
+                          headers={"Authorization": "Bearer wrong", "X-Forwarded-For": "9.9.9.9"})
+    with patch.object(Lockout, "record_failure") as spy:
+        resp = views.HelloView()._auth(req, "kindle_test")
+    assert resp.status == 401
+    spy.assert_called_once_with("1.2.3.4")
+
+
+HUGE = 10**400
+
+
+async def test_huge_ints_rejected_cleanly(setup):
+    _, dev, _ = setup
+    for k in ("min", "max"):
+        h = {"contract": 1, "agent_version": "1", "capabilities": [{"id": "brightness", k: HUGE}],
+             "device": {"name": "a", "manufacturer": "b", "model": "c", "sw_version": "d"}}
+        assert (await dev.hello(h))[0] == 400
+    await dev.hello()
+    assert (await dev.state({"brightness": HUGE}))[0] == 400
+    assert (await dev.state({"brightness": 5}))[0] == 200
+
+
+@pytest.mark.parametrize("t,status", [(-1, 400), (4102444801, 400), (HUGE, 400),
+                                      (0, 200), (4102444800, 200)])
+async def test_state_time_bounds(setup, t, status):
+    _, dev, _ = setup
+    await dev.hello()
+    assert (await dev.state({}, time=t))[0] == status

@@ -40,8 +40,15 @@ def _err(status: int, code: str, detail: str | None = None) -> web.Response:
     return _dump(body, status)
 
 
+MAX_TIME = 4102444800  # year 2100
+
+
 def _num(v) -> bool:
-    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+    if isinstance(v, bool):
+        return False
+    if isinstance(v, int):
+        return v.bit_length() <= 1024  # must stay convertible to float (isfinite would raise)
+    return isinstance(v, float) and math.isfinite(v)
 
 
 def _keys_ok(d, required, optional=()) -> bool:
@@ -74,7 +81,7 @@ def _validate_hello(b) -> str | None:
 def _validate_state(b) -> str | None:
     if not _keys_ok(b, ("time", "values", "acks")):
         return "bad state shape"
-    if isinstance(b["time"], bool) or not isinstance(b["time"], int):
+    if isinstance(b["time"], bool) or not isinstance(b["time"], int) or not 0 <= b["time"] <= MAX_TIME:
         return "time"
     if not isinstance(b["values"], dict):
         return "values"
@@ -96,7 +103,11 @@ class _Base(HomeAssistantView):
     requires_auth = False
 
     def _auth(self, request: web.Request, device_id: str):
-        """Return (entry_id, runtime) or an error response."""
+        """Return (entry_id, runtime) or an error response.
+
+        The lockout key is request.remote (the socket peer), never X-Forwarded-For; behind a
+        reverse proxy HA's own forwarded-header middleware decides what request.remote is.
+        """
         hass = request.app["hass"]
         data = hass.data.get(DOMAIN, {})
         lockout, ip = data.get("lockout"), request.remote
