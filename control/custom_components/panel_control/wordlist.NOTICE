@@ -1,0 +1,3 @@
+wordlist.txt: EFF Short Wordlist #2 (https://www.eff.org/files/2016/09/08/eff_short_wordlist_2_0.txt)
+by the Electronic Frontier Foundation (EFF), licensed CC BY 3.0 US (https://creativecommons.org/licenses/by/3.0/us/).
+Filtered to words of 3-7 letters (674 of 1296 words; "yo-yo" also excluded because hyphens separate passphrase words).
