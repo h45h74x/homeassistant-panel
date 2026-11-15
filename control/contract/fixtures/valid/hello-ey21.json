@@ -20,6 +20,9 @@
       "id": "refresh_screen"
     },
     {
+      "id": "sleep"
+    },
+    {
       "id": "battery_level"
     },
     {

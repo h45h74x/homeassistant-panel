@@ -24,3 +24,5 @@ SENSOR = {
 }
 
 NUMBER_UNIT = {"brightness": PERCENTAGE, "warmth": PERCENTAGE}
+
+BUTTON_ICON = {"sleep": "mdi:sleep"}

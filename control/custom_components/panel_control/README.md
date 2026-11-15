@@ -12,6 +12,7 @@ Entities are created only for capabilities the device declares. Control and sens
 | `warmth` | number | enabled |
 | `keep_awake` | switch | enabled |
 | `refresh_screen` | button (write-only) | enabled |
+| `sleep` | button (write-only) | enabled |
 | `battery_level` | sensor | enabled |
 | `charging` | binary_sensor | enabled |
 | `frontlight_on` | binary_sensor | disabled (diagnostic) |

@@ -54,7 +54,7 @@ async def test_only_declared_entities_created(hass, setup):
     entry, dev = setup
     await _hello_ok(hass, dev)
     ids = {e.unique_id for e in _ents(hass, entry)}
-    assert len(ids) == 23
+    assert len(ids) == 24
     assert "kindle_test_warmth" not in ids and "kindle_test_battery_temperature" not in ids
 
 
@@ -146,7 +146,7 @@ async def test_restart_restores_entities_unavailable_until_hello(hass, setup):
     assert await hass.config_entries.async_reload(entry.entry_id)
     await hass.async_block_till_done()
     eid = _eid(hass, "sensor", "battery_level")
-    assert len([e for e in _ents(hass, entry)]) == 23
+    assert len([e for e in _ents(hass, entry)]) == 24
     assert hass.states.get(eid).state == "unavailable"
     assert (await dev.state({"battery_level": 1}))[0] == 409
     await _hello_ok(hass, dev)
@@ -185,7 +185,7 @@ async def test_new_capability_in_later_hello_adds_entity_no_duplicates(hass, set
     await _hello_ok(hass, dev)
     await _hello_ok(hass, dev)
     assert _eid(hass, "sensor", "uptime") is not None
-    assert len(_ents(hass, entry)) == 23
+    assert len(_ents(hass, entry)) == 24
 
 
 async def test_store_never_contains_serial_ip_ssid(hass, setup, hass_storage, freezer):
@@ -200,3 +200,34 @@ async def test_store_never_contains_serial_ip_ssid(hass, setup, hass_storage, fr
     assert "B0SERIAL123" not in text and "serial" not in text
     assert "10.9.8.7" not in text and "HomeNet" not in text
     assert data["device"]["model"] == "Kindle Paperwhite 1 (EY21)"
+
+
+async def test_sleep_button_enabled_and_press_queues_null(hass, setup):
+    entry, dev = setup
+    await _hello_ok(hass, dev)
+    eid = _eid(hass, "button", "sleep")
+    assert eid is not None
+    assert er.async_get(hass).async_get(eid).disabled_by is None
+    for _ in range(2):
+        await hass.services.async_call("button", "press", {"entity_id": eid}, blocking=True)
+    cmds = (await dev.commands())[1]["commands"]
+    assert [(c["capability"], c["value"]) for c in cmds] == [("sleep", None)]
+
+
+async def test_sleep_press_refused_when_disabled(hass, setup):
+    entry, dev = setup
+    await _hello_ok(hass, dev)
+    rt = hass.data[DOMAIN]["entries"][entry.entry_id][0]
+    rt.set_enabled(set())
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call("button", "press", {"entity_id": _eid(hass, "button", "sleep")},
+                                       blocking=True)
+    assert (await dev.commands())[1]["commands"] == []
+
+
+async def test_sleep_entity_only_when_declared(hass, setup):
+    entry, dev = setup
+    h = _hello()
+    h["capabilities"] = [c for c in h["capabilities"] if c["id"] != "sleep"]
+    await _hello_ok(hass, dev, h)
+    assert _eid(hass, "button", "sleep") is None

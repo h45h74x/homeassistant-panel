@@ -58,6 +58,20 @@
       "interval_s": null
     },
     {
+      "id": "sleep",
+      "category": "control",
+      "sensitive": false,
+      "entity": "button",
+      "access": "w",
+      "type": "none",
+      "unit": null,
+      "min": null,
+      "max": null,
+      "values": null,
+      "report": "none",
+      "interval_s": null
+    },
+    {
       "id": "battery_level",
       "category": "sensor",
       "sensitive": false,

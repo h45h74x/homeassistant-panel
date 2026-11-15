@@ -263,3 +263,17 @@ def test_set_enabled_survives_restore_and_args_do_not_overwrite():
     rt.config({"brightness"})
     rt.apply_state({"time": 1000, "values": {}}, {"brightness"})
     assert rt.enabled == {"keep_awake"}
+
+
+def test_sleep_press_collapses_and_ignores_value():
+    rt, _ = make(ALL + ("sleep",))
+    rt.queue_command("sleep", None)
+    rt.queue_command("sleep", 1)
+    cmds = rt.take_commands()
+    assert len(cmds) == 1 and cmds[0]["capability"] == "sleep" and cmds[0]["value"] is None
+
+
+def test_sleep_refused_when_undeclared():
+    rt, _ = make()
+    with pytest.raises(ValueError):
+        rt.queue_command("sleep", None)
