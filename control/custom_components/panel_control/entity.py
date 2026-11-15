@@ -13,6 +13,7 @@ from homeassistant.helpers.entity import Entity, EntityCategory
 
 from .const import DOMAIN, hello_signal
 from .enablement import default_enabled
+from .mapping import NAME_OVERRIDE, platform_for
 from .runtime import CATALOG, DeviceRuntime
 from .views import signal as state_signal
 
@@ -45,7 +46,7 @@ class PanelEntity(Entity):
         self._value = None
         c = CATALOG[cap]
         self._attr_unique_id = f"{rt.device_id}_{cap}"
-        self._attr_name = label(cap)
+        self._attr_name = NAME_OVERRIDE.get(cap) or label(cap)
         self._attr_entity_registry_enabled_default = default_enabled(cap)
         if c["category"] == "diagnostic":
             self._attr_entity_category = EntityCategory.DIAGNOSTIC
@@ -90,7 +91,7 @@ def setup_kind(hass: HomeAssistant, entry: ConfigEntry, add, kind: str, factory)
 
     @callback
     def _add() -> None:
-        new = [c for c in rt.declared if CATALOG[c]["entity"] == kind and c not in added]
+        new = [c for c in rt.declared if platform_for(c, CATALOG[c]["entity"]) == kind and c not in added]
         added.update(new)
         if new:
             add([factory(entry, rt, c) for c in new])

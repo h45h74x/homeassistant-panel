@@ -23,7 +23,7 @@ from .views import _num, CommandsView, ConfigView, HEARTBEAT_S, HelloView, State
 from .views import signal as state_signal
 
 _LOGGER = logging.getLogger(__name__)
-PLATFORMS = ["number", "switch", "button", "sensor", "binary_sensor"]
+PLATFORMS = ["number", "light", "switch", "button", "sensor", "binary_sensor"]
 _SAFE_DEVICE = ("name", "manufacturer", "model", "sw_version", "hw_version", "mac")
 
 
@@ -98,6 +98,11 @@ async def _setup(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     sync_device()
     entry.async_on_unload(async_dispatcher_connect(hass, hello_signal(device_id), on_hello))
+    # brightness used to be a number entity: drop the orphan before platforms are set up
+    reg = er.async_get(hass)
+    for e in er.async_entries_for_config_entry(reg, entry.entry_id):
+        if e.domain == "number" and e.unique_id == f"{device_id}_brightness":
+            reg.async_remove(e.entity_id)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     @callback

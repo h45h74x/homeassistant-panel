@@ -23,10 +23,16 @@ def _enable(enable_custom_integrations):
 
 
 @pytest.fixture
-async def setup(hass, hass_client_no_auth):
+def setup_pre(hass):
     entry = MockConfigEntry(domain=DOMAIN, unique_id="kindle_test", title="Kitchen Kindle",
                             data={"device_id": "kindle_test", "passphrase": PASS, "name": "K"})
     entry.add_to_hass(hass)
+    return entry
+
+
+@pytest.fixture
+async def setup(hass, hass_client_no_auth, setup_pre):
+    entry = setup_pre
     assert await async_setup_component(hass, DOMAIN, {})
     await hass.async_block_till_done()
     client = await hass_client_no_auth()
@@ -62,7 +68,7 @@ async def test_defaults_enabled_state(hass, setup):
     entry, dev = setup
     await _hello_ok(hass, dev)
     reg = er.async_get(hass)
-    for cap, kind in (("brightness", "number"), ("battery_level", "sensor")):
+    for cap, kind in (("brightness", "light"), ("battery_level", "sensor")):
         assert reg.async_get(_eid(hass, kind, cap)).disabled_by is None
     for cap in ("cpu_load", "ip_address"):
         assert reg.async_get(_eid(hass, "sensor", cap)).disabled_by is not None
@@ -75,17 +81,114 @@ async def test_sensor_value_from_state(hass, setup):
     await hass.async_block_till_done()
     assert hass.states.get(_eid(hass, "sensor", "battery_level")).state == "77"
     assert hass.states.get(_eid(hass, "binary_sensor", "charging")).state == "on"
-    assert hass.states.get(_eid(hass, "number", "brightness")).state == "12"
+    assert hass.states.get(_eid(hass, "light", "brightness")).attributes["brightness"] == 31  # 12 %
     assert hass.states.get(_eid(hass, "switch", "keep_awake")).state == "on"
 
 
 async def test_number_set_queues_command(hass, setup):
     entry, dev = setup
-    await _hello_ok(hass, dev)
-    await hass.services.async_call("number", "set_value", {"entity_id": _eid(hass, "number", "brightness"),
+    h = _hello()
+    h["capabilities"].append({"id": "warmth"})
+    await _hello_ok(hass, dev, h)
+    await hass.services.async_call("number", "set_value", {"entity_id": _eid(hass, "number", "warmth"),
                                                            "value": 40}, blocking=True)
     cmds = (await dev.commands())[1]["commands"]
-    assert [(c["capability"], c["value"]) for c in cmds] == [("brightness", 40)]
+    assert [(c["capability"], c["value"]) for c in cmds] == [("warmth", 40)]
+
+
+async def test_brightness_is_light_not_number_and_warmth_stays_number(hass, setup):
+    entry, dev = setup
+    await _hello_ok(hass, dev)
+    assert _eid(hass, "light", "brightness") == "light.kitchen_kindle_frontlight"
+    assert _eid(hass, "number", "brightness") is None
+    assert len(_ents(hass, entry)) == 24
+    h = _hello()
+    h["capabilities"].append({"id": "warmth"})
+    await _hello_ok(hass, dev, h)
+    assert _eid(hass, "number", "warmth") is not None
+    assert _eid(hass, "light", "warmth") is None
+
+
+async def test_old_number_brightness_entry_removed_on_setup(hass, setup_pre):
+    entry = setup_pre
+    reg = er.async_get(hass)
+    old = reg.async_get_or_create("number", DOMAIN, "kindle_test_brightness", config_entry=entry,
+                                  suggested_object_id="kitchen_kindle_brightness")
+    keep = reg.async_get_or_create("number", DOMAIN, "kindle_test_warmth", config_entry=entry)
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+    assert reg.async_get(old.entity_id) is None
+    assert reg.async_get(keep.entity_id) is not None  # only brightness migrates
+
+
+@pytest.mark.parametrize("value,state,attr", [(50, "on", 128), (100, "on", 255), (0, "off", None),
+                                              (None, "unknown", None), (1, "on", 3)])
+async def test_light_state_from_post(hass, setup, value, state, attr):
+    entry, dev = setup
+    await _hello_ok(hass, dev)
+    await dev.state({"brightness": value})
+    await hass.async_block_till_done()
+    st = hass.states.get(_eid(hass, "light", "brightness"))
+    assert st.state == state and st.attributes.get("brightness") == attr
+    assert st.attributes["supported_color_modes"] == ["brightness"]
+
+
+async def _cmds(dev):
+    return [(c["capability"], c["value"]) for c in (await dev.commands())[1]["commands"]]
+
+
+@pytest.mark.parametrize("data,sent", [({"brightness": 255}, 100), ({"brightness": 1}, 1),
+                                       ({"brightness": 128}, 50), ({}, 50)])
+async def test_light_turn_on_queues_percent(hass, setup, data, sent):
+    entry, dev = setup
+    await _hello_ok(hass, dev)
+    eid = _eid(hass, "light", "brightness")
+    await hass.services.async_call("light", "turn_on", {"entity_id": eid, **data}, blocking=True)
+    assert await _cmds(dev) == [("brightness", sent)]
+    assert hass.states.get(eid).state == "unknown"  # no optimistic state
+
+
+async def test_light_turn_off_queues_zero_and_no_optimistic(hass, setup):
+    entry, dev = setup
+    await _hello_ok(hass, dev)
+    eid = _eid(hass, "light", "brightness")
+    await dev.state({"brightness": 40})
+    await hass.async_block_till_done()
+    await hass.services.async_call("light", "turn_off", {"entity_id": eid}, blocking=True)
+    assert await _cmds(dev) == [("brightness", 0)]
+    assert hass.states.get(eid).state == "on"
+
+
+async def test_light_turn_on_restores_last_nonzero(hass, setup):
+    entry, dev = setup
+    await _hello_ok(hass, dev)
+    eid = _eid(hass, "light", "brightness")
+    for v in (70, 0):
+        await dev.state({"brightness": v})
+        await hass.async_block_till_done()
+    await hass.services.async_call("light", "turn_on", {"entity_id": eid}, blocking=True)
+    assert await _cmds(dev) == [("brightness", 70)]
+
+
+async def test_light_refused_when_unavailable_or_disabled(hass, setup, freezer: FrozenDateTimeFactory):
+    entry, dev = setup
+    await _hello_ok(hass, dev)
+    rt = hass.data[DOMAIN]["entries"][entry.entry_id][0]
+    eid = _eid(hass, "light", "brightness")
+    rt.set_enabled(set())
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call("light", "turn_on", {"entity_id": eid}, blocking=True)
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call("light", "turn_off", {"entity_id": eid}, blocking=True)
+    rt.set_enabled({"brightness"})
+    freezer.tick(181)
+    async_fire_time_changed(hass, dt_util.utcnow())
+    await hass.async_block_till_done()
+    try:
+        await hass.services.async_call("light", "turn_on", {"entity_id": eid}, blocking=True)
+    except ServiceValidationError:
+        pass
+    assert rt.take_commands() == []
 
 
 async def test_button_press_queues_value_null(hass, setup):
@@ -231,3 +334,11 @@ async def test_sleep_entity_only_when_declared(hass, setup):
     h["capabilities"] = [c for c in h["capabilities"] if c["id"] != "sleep"]
     await _hello_ok(hass, dev, h)
     assert _eid(hass, "button", "sleep") is None
+
+
+async def test_sleep_button_named_toggle_sleep_fresh_id(hass, setup):
+    entry, dev = setup
+    await _hello_ok(hass, dev)
+    eid = _eid(hass, "button", "sleep")
+    assert eid == "button.kitchen_kindle_toggle_sleep"
+    assert hass.states.get(eid).attributes["friendly_name"] == "Kitchen Kindle Toggle sleep"

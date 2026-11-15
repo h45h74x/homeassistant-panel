@@ -23,6 +23,14 @@ SENSOR = {
     "rootfs_used_percent": {"unit": PERCENTAGE},
 }
 
-NUMBER_UNIT = {"brightness": PERCENTAGE, "warmth": PERCENTAGE}
+NUMBER_UNIT = {"warmth": PERCENTAGE}
+
+# HA presentation only: the contract/catalog `entity` field stays what the device declares
+PLATFORM_OVERRIDE = {"brightness": "light"}
+NAME_OVERRIDE = {"sleep": "Toggle sleep", "brightness": "Frontlight"}
+
+
+def platform_for(capability_id: str, catalog_entity: str) -> str:
+    return PLATFORM_OVERRIDE.get(capability_id, catalog_entity)
 
 BUTTON_ICON = {"sleep": "mdi:sleep"}

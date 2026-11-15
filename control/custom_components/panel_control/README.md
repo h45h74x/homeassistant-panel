@@ -8,11 +8,11 @@ Entities are created only for capabilities the device declares. Control and sens
 
 | Capability | Entity | Default |
 |---|---|---|
-| `brightness` | number | enabled |
+| `brightness` | light "Frontlight" (shown as a dimmable light; the capability is still a 0-100 percent number) | enabled |
 | `warmth` | number | enabled |
 | `keep_awake` | switch | enabled |
 | `refresh_screen` | button (write-only) | enabled |
-| `sleep` | button (write-only) | enabled |
+| `sleep` | button "Toggle sleep" (write-only) | enabled |
 | `battery_level` | sensor | enabled |
 | `charging` | binary_sensor | enabled |
 | `frontlight_on` | binary_sensor | disabled (diagnostic) |
@@ -65,6 +65,8 @@ The Kindle cannot resolve `.local` or bare hostnames, only IP addresses, so the 
 
 - Entities go unavailable after 3 missed heartbeats (about 3 minutes).
 - Commands are best-effort and fire-once. Only the latest value per capability is kept, and a command expires after 5 minutes (`sleep` after 30 seconds, so a press made while the device is unreachable does not fire later). Home Assistant cannot wake a sleeping device: that needs a physical action on it. A failed command (`ok:false` ack) is logged as a warning and not retried. Sleep also turns keep-awake off.
+- The Frontlight light (`light.<device>_frontlight`) maps HA brightness 0-255 to percent; turning it on without a brightness restores the last non-zero value it saw (50 if none). The state shown is always the device's next report, never optimistic. Earlier installs had `number.<device>_brightness`: it is removed automatically on setup.
+- The `sleep` button is named "Toggle sleep" and is one-way (HA cannot wake the device; a press expires after 30 s). Fresh installs get `button.<device>_toggle_sleep`; an existing entity keeps its old entity id (`button.<device>_sleep`), HA does not rename ids.
 - After an HA restart, entities are restored from storage and stay unavailable until the device reconnects.
 
 ## Security

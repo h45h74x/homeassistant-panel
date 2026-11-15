@@ -26,7 +26,7 @@ The agent does not start on boot: start it from KUAL after every reboot.
 
 ## Sleep button
 
-HA shows a button "Sleep" that locks the screen exactly like the power button. The Kindle suspends after about 30-60 s and goes unavailable in HA after about 3 minutes. HA cannot wake it: press the physical power button. After waking, the agent reconnects by itself within the backoff time (up to 2 minutes). Keep-awake (`preventScreenSaver` 1) blocks the lock (`powerButton 1` returns 0 but powerd stays `active`), so Sleep first sets keep-awake to 0; the `keep_awake` switch then reports off. After a lock the device stays on the network for a while and suspends later (about 40 s to several minutes observed; activity such as SSH sessions delays it). The agent is back immediately after waking (it logs `online`). Wall-panel tip: put a confirmation on the dashboard tap action.
+HA shows a button "Toggle sleep" that locks the screen exactly like the power button. The Kindle suspends after about 30-60 s and goes unavailable in HA after about 3 minutes. HA cannot wake it: press the physical power button. After waking, the agent reconnects by itself within the backoff time (up to 2 minutes). Keep-awake (`preventScreenSaver` 1) blocks the lock (`powerButton 1` returns 0 but powerd stays `active`), so Sleep first sets keep-awake to 0; the `keep_awake` switch then reports off. After a lock the device stays on the network for a while and suspends later (about 40 s to several minutes observed; activity such as SSH sessions delays it). The agent is back immediately after waking (it logs `online`). Wall-panel tip: put a confirmation on the dashboard tap action.
 
 ## Status on screen
 

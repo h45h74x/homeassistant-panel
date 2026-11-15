@@ -2,7 +2,7 @@
 
   dev_ha.py pair [NAME]   add the integration, print the Kindle config lines (url=..., token=...)
   dev_ha.py states        list panel_control entity states (value masked for sensitive ids)
-  dev_ha.py call DOMAIN.SERVICE '{"entity_id": "...", ...}'   call a service (e.g. number.set_value)
+  dev_ha.py call DOMAIN.SERVICE '{"entity_id": "...", ...}'   call a service (e.g. light.turn_on)
   dev_ha.py check         verify the websocket calls the web UI needs at startup (get_services, get_config, get_states)
   dev_ha.py enable|disable NAME...   enable/disable entities of the integration whose id contains NAME (websocket API)
 Reads the admin password from .dev-ha/.admin-pass. Stdlib only.

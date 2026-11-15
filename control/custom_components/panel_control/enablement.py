@@ -3,6 +3,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
 from .const import DOMAIN
+from .mapping import platform_for
 from .runtime import CATALOG, DeviceRuntime
 
 
@@ -16,7 +17,7 @@ def compute_enabled(hass: HomeAssistant, entry_id: str, runtime: DeviceRuntime) 
     out = set()
     for cap in runtime.declared:
         entity_id = reg.async_get_entity_id(
-            CATALOG[cap]["entity"], DOMAIN, f"{runtime.device_id}_{cap}")
+            platform_for(cap, CATALOG[cap]["entity"]), DOMAIN, f"{runtime.device_id}_{cap}")
         entry = reg.async_get(entity_id) if entity_id else None
         if (entry.disabled_by is None) if entry else default_enabled(cap):
             out.add(cap)

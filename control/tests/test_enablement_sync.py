@@ -11,7 +11,7 @@ from homeassistant.setup import async_setup_component
 from custom_components.panel_control.const import DOMAIN
 
 from fake_device import FakeDevice
-from test_entities import BASE, PASS, _eid, _hello_ok, setup  # noqa: F401
+from test_entities import BASE, PASS, _eid, _hello_ok, setup, setup_pre  # noqa: F401
 
 
 @pytest.fixture(autouse=True)
@@ -43,8 +43,8 @@ async def test_enabling_diagnostic_changes_config_rev_and_config_endpoint(hass, 
 async def test_disabling_control_refuses_commands(hass, setup):
     entry, dev = setup
     await _hello_ok(hass, dev)
-    eid = _eid(hass, "number", "brightness")
-    await hass.services.async_call("number", "set_value", {"entity_id": eid, "value": 40}, blocking=True)
+    eid = _eid(hass, "light", "brightness")
+    await hass.services.async_call("light", "turn_on", {"entity_id": eid, "brightness": 102}, blocking=True)
     _set_disabled(hass, eid, True)
     await hass.async_block_till_done()
     assert (await dev.commands())[1]["commands"] == []  # queued command purged
@@ -57,7 +57,7 @@ async def test_disabling_control_refuses_commands(hass, setup):
 async def test_setup_syncs_enabled_from_registry(hass, setup):
     entry, dev = setup
     await _hello_ok(hass, dev)
-    _set_disabled(hass, _eid(hass, "number", "brightness"), True)
+    _set_disabled(hass, _eid(hass, "light", "brightness"), True)
     await hass.async_block_till_done()
     assert await hass.config_entries.async_reload(entry.entry_id)
     await hass.async_block_till_done()
@@ -240,3 +240,15 @@ async def test_failed_setup_leaves_no_runtime(hass):
         assert await async_setup_component(hass, DOMAIN, {})
         await hass.async_block_till_done()
     assert entry.entry_id not in hass.data[DOMAIN]["entries"]
+
+
+async def test_enabling_light_restores_brightness_in_config(hass, setup):
+    entry, dev = setup
+    await _hello_ok(hass, dev)
+    eid = _eid(hass, "light", "brightness")
+    _set_disabled(hass, eid, True)
+    await hass.async_block_till_done()
+    assert "brightness" not in (await dev.config())[1]["enabled"]
+    _set_disabled(hass, eid, False)
+    await hass.async_block_till_done()
+    assert "brightness" in (await dev.config())[1]["enabled"]

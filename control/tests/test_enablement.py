@@ -40,3 +40,12 @@ async def test_capability_added_in_second_hello_enabled(hass):
     assert "warmth" not in rt.enabled
     rt.set_enabled(compute_enabled(hass, "x", rt))
     assert rt.enabled == {"brightness", "warmth"}
+
+
+async def test_brightness_looked_up_as_light(hass):
+    entry = MockConfigEntry(domain=DOMAIN)
+    entry.add_to_hass(hass)
+    er.async_get(hass).async_get_or_create(
+        "light", DOMAIN, "kindle_test_brightness", config_entry=entry,
+        disabled_by=er.RegistryEntryDisabler.USER)
+    assert compute_enabled(hass, entry.entry_id, _rt("brightness", "battery_level")) == {"battery_level"}
