@@ -277,3 +277,32 @@ def test_sleep_refused_when_undeclared():
     rt, _ = make()
     with pytest.raises(ValueError):
         rt.queue_command("sleep", None)
+
+
+@pytest.mark.parametrize("age,live", [(29, True), (30, True), (31, False)])
+def test_sleep_ttl_30s(age, live):
+    rt, clock = make(ALL + ("sleep",))
+    rt.queue_command("sleep", None)
+    clock.t += age
+    assert bool(rt.take_commands()) is live
+
+
+async def test_sleep_expired_not_delivered_via_wait_commands():
+    rt, clock = make(ALL + ("sleep",))
+    rt.queue_command("sleep", None)
+    clock.t += 31
+    assert await rt.wait_commands(0) == []
+
+
+def test_other_commands_keep_300s_and_sleep_requeues():
+    rt, clock = make(ALL + ("sleep",))
+    rt.queue_command("refresh_screen", None)
+    rt.queue_command("brightness", 10)
+    rt.queue_command("sleep", None)
+    clock.t += 300
+    assert {c["capability"] for c in rt.take_commands()} == {"refresh_screen", "brightness"}
+    rt.queue_command("sleep", None)
+    clock.t += 31
+    assert rt.take_commands() == []
+    rt.queue_command("sleep", None)
+    assert [c["capability"] for c in rt.take_commands()] == ["sleep"]

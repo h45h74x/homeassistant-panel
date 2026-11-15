@@ -3,7 +3,7 @@
 Each item needs a catalog entry in the contract first (id, category, unit), then a device implementation. Order below is a suggestion, not a plan.
 
 ## 1. `lock` (dropped from v1 on 2026-11-15)
-Update (v1.1): the one-way `sleep` button (value-less press, no state, no wake) now exists in the catalog. A `lock`/`unlock` switch with state and wake remains future work.
+Update 2026-11-15: the one-way `sleep` button (value-less press, no state, no wake) now exists in the catalog. A `lock`/`unlock` switch with state and wake remains future work.
 
 Why dropped: after the system lock (`powerd powerButton 1`) the EY21 suspends within about 30-60 s and drops Wi-Fi. `wakeUp 1` unlocks over the network only inside that window, so a `lock` switch would strand the device. Full evidence: `devices/kindle-ey21/README.md` ("Lock findings").
 

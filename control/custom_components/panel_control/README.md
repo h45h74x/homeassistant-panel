@@ -64,7 +64,7 @@ The Kindle cannot resolve `.local` or bare hostnames, only IP addresses, so the 
 ## Behaviour
 
 - Entities go unavailable after 3 missed heartbeats (about 3 minutes).
-- Commands are best-effort and fire-once. Only the latest value per capability is kept, and a command expires after 5 minutes. A failed command (`ok:false` ack) is logged as a warning and not retried.
+- Commands are best-effort and fire-once. Only the latest value per capability is kept, and a command expires after 5 minutes (`sleep` after 30 seconds, so a press made while the device is unreachable does not fire later). Home Assistant cannot wake a sleeping device: that needs a physical action on it. A failed command (`ok:false` ack) is logged as a warning and not retried.
 - After an HA restart, entities are restored from storage and stay unavailable until the device reconnects.
 
 ## Security

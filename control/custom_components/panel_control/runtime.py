@@ -7,7 +7,7 @@ explicit `set_enabled`. The `enabled` argument of `config()` / `apply_state()` i
 used only to compute their result and never changes the runtime's set.
 
 Commands are fire-once: `take_commands()` removes them, unacked ones are not
-redelivered. A command is delivered while now - issued_at <= 300 s (300 ok, 301 expired).
+redelivered. A command is delivered while now - issued_at <= 300 s (300 ok, 301 expired), except `sleep`: 30 s.
 """
 from __future__ import annotations
 
@@ -26,6 +26,8 @@ CATALOG = {
     for c in json.loads((Path(__file__).parent / "catalog.json").read_text())["capabilities"]
 }
 COMMAND_TTL = 300
+# a press made while the device was unreachable must never fire after it comes back
+COMMAND_TTL_S = {"sleep": 30}
 _LOG = logging.getLogger(__name__)
 _CTRL = re.compile(r"[\x00-\x1f\x7f-\x9f  ]")
 
@@ -174,7 +176,7 @@ class DeviceRuntime:
 
     def take_commands(self) -> list[dict]:
         now = self._now()
-        cmds = [c for c in self._queue.values() if now - c["issued_at"] <= COMMAND_TTL]
+        cmds = [c for c in self._queue.values() if now - c["issued_at"] <= COMMAND_TTL_S.get(c["capability"], COMMAND_TTL)]
         self._queue = {}
         return cmds
 

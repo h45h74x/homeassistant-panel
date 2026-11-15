@@ -42,7 +42,7 @@ Precedence: `locked_out`, `unknown_device`, `unauthorized`; then for hello `unsu
 
 ## Semantics
 
-- **Commands** are queued by the host as `{id, capability, value, issued_at}`. The queue keeps the latest per capability, drops commands older than 300 s, and is in memory only. The host rejects commands for undeclared or disabled capabilities before queueing.
+- **Commands** are queued by the host as `{id, capability, value, issued_at}`. The host always emits `null` as the value of a value-less button (a press never carries a value). The queue keeps the latest per capability, drops commands older than 300 s (`sleep`: 30 s, so that a press made while the device was unreachable never fires after it comes back), and is in memory only. The host rejects commands for undeclared or disabled capabilities before queueing.
 - **Ack:** the agent lists applied command ids in `acks` of its next `state`. `ok:false` in an ack is a warning only; the command is not retried.
 - **Long poll:** `wait` is clamped to 0-55 s. An empty `commands` list means timeout.
 - **state.time** is the agent's clock (epoch seconds); the host derives `clock_offset` from it.
