@@ -1,0 +1,16 @@
+# Panel Control config. Copy this file to "config" (same folder) and fill it in.
+# Format: key = value, one per line. Lines starting with # are ignored.
+
+# URL of the Home Assistant panel-control endpoint, exactly as the HA pairing
+# screen shows it. It must contain an IP address (http://192.168.1.10:8123/...):
+# the Kindle cannot resolve .local names.
+#url = http://192.168.1.10:8123/api/panel_control
+
+# Passphrase from the HA pairing screen.
+#token = paste-passphrase-here
+
+# Optional: name shown in Home Assistant for this device.
+#device_name = Kindle Kitchen
+
+# Optional: set to 1 to send the Kindle serial number to Home Assistant.
+#send_serial = 0
