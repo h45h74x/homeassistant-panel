@@ -1,0 +1,35 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add a panel device",
+        "description": "Name the device, for example Kitchen Kindle.",
+        "data": {
+          "name": "Name"
+        }
+      },
+      "pairing": {
+        "title": "Pair the device",
+        "description": "Copy these two values into the Kindle's `config` file (`url=` and `token=`).\n\nurl: `{url}`\n\ntoken: `{passphrase}`\n\n{url_note}"
+      }
+    },
+    "error": {
+      "name_required": "Enter a name."
+    },
+    "abort": {
+      "already_configured": "This device is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Regenerate passphrase",
+        "description": "Submit to create a new passphrase. The old one stops working immediately."
+      },
+      "done": {
+        "title": "New passphrase",
+        "description": "Copy this into the Kindle's `config` file (`token=`): `{passphrase}`"
+      }
+    }
+  }
+}
