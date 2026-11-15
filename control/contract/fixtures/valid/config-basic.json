@@ -1,10 +1,1 @@
-{
-  "config_rev": 1,
-  "enabled": [
-    "brightness",
-    "battery_level"
-  ],
-  "interval_s": {
-    "battery_level": 60
-  }
-}
+{"config_rev":1,"enabled":["brightness","battery_level"],"interval_s":{"battery_level":60}}
