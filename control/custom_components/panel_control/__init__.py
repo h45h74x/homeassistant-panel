@@ -31,7 +31,8 @@ def _clean_caps(items: list) -> list[dict]:
     """Keep known, unique ids; keep min/max only if both are finite numbers (or absent) and ordered."""
     out: dict[str, dict] = {}
     for c in items:
-        if not isinstance(c, dict) or c.get("id") not in CATALOG or c["id"] in out:
+        if not isinstance(c, dict) or not isinstance(c.get("id"), str) or c["id"] not in CATALOG \
+                or c["id"] in out:
             continue
         b = {k: c[k] for k in ("min", "max") if k in c}
         if not all(_num(v) for v in b.values()) or (len(b) == 2 and b["min"] > b["max"]):

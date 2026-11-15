@@ -163,3 +163,19 @@ async def test_ack_logging_never_breaks_apply_state(hass, setup, caplog):
     assert len(msgs) == 7
     for m in msgs:
         assert not any(c in m for c in "\n\x1b  ") and len(m) < 250
+
+
+@pytest.mark.parametrize("bad_id", [["x"], {}, {"a": 1}])
+async def test_stored_unhashable_id_is_dropped(hass, hass_client_no_auth, hass_storage, bad_id):
+    d = await _boot(hass, hass_client_no_auth, hass_storage, "ku", {
+        "version": 1, "minor_version": 1, "key": f"{DOMAIN}.ku",
+        "data": {"declared": [{"id": bad_id}, {"id": "brightness"}], "device": {}}})
+    assert (await d.hello())[0] == 200
+
+
+@pytest.mark.parametrize("bad_id", [["x"], {"a": 1}])
+async def test_ack_unhashable_id_does_not_raise(hass, setup, bad_id):
+    entry, dev = setup
+    await _hello_ok(hass, dev)
+    rt = hass.data[DOMAIN]["entries"][entry.entry_id][0]
+    rt.apply_state({"time": 1763200000, "values": {}, "acks": [{"id": bad_id, "ok": False}]}, rt.enabled)

@@ -103,7 +103,7 @@ class DeviceRuntime:
                 err = _CTRL.sub(" ", str(a.get("error") or ""))[:100]
                 cid = _CTRL.sub(" ", str(a.get("id")))[:32]
                 _LOG.warning("device %s: command %s (capability %s) failed: %s", self.device_id,
-                             cid, self._recent.get(a.get("id"), "unknown"), err)
+                             cid, self._recent.get(a["id"] if isinstance(a.get("id"), str) else "", "unknown"), err)
         ok = lambda i: i in self.declared and i in enabled  # noqa: E731
         out = {i: v for i, v in state.get("values", {}).items()
                if ok(i) and i != "clock_offset" and CATALOG[i]["access"] != "w"}
