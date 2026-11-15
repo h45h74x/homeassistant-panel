@@ -146,6 +146,35 @@ ok sample_url_line sh -c "grep -q '^#.*url *= *http://[0-9.]*:[0-9]*/api/panel_c
 sed 's/^#\(url\)/\1/; s/^#\(token\)/\1/' "$PKG/config.sample" > "$T/sample.cfg"
 ok sample_loads sh -c ". '$BIN/lib.sh'; load_config '$T/sample.cfg'"
 
+# is_agent with a real NUL-separated cmdline, started the way start.sh does
+begin t12
+mkdir -p "$D/real"; printf '#!/bin/sh\nwhile :; do sleep 1; done\n' > "$D/real/agent.sh"
+sh "$D/real/agent.sh" >/dev/null 2>&1 & real=$!
+sleep 30 & other=$!
+isag() { sh -c '. "$1/launch-lib.sh"; is_agent "$2"' sh "$BIN" "$1"; }
+ok is_agent_true_for_real_agent isag $real
+ok is_agent_false_for_unrelated sh -c "! sh -c '. \"\$1/launch-lib.sh\"; is_agent \"\$2\"' sh '$BIN' $other"
+kill $real $other 2>/dev/null
+
+# stale rows are blanked, long messages wrap
+begin t13
+sh "$BIN/start.sh" >/dev/null
+printf 'state=running\nlast_contact=%s\nlast_error=boom\n' "$(( $(date +%s) - 500 ))" > "$PANEL_STATUS"
+sh "$BIN/status.sh" >/dev/null
+sh "$BIN/stop.sh" >/dev/null
+lastrow() { awk -v r="$1" '$2==r' "$D/eips.log" | tail -n 1 | cut -c5-; }
+blank="$(printf '%60s' '')"
+for r in 1 2 3 4; do ok "row_${r}_blank_after_stop" eq "$(lastrow $r)" "$blank"; done
+begin t14
+msg=$(printf '0123456789%.0s' 1 2 3 4 5 6 7 8 9 10 11 12 13)
+sh -c '. "$1/launch-lib.sh"; say "$2"' sh "$BIN" "$msg" >/dev/null
+got=$(tail -n 3 "$D/eips.log" | cut -c5- | sed 's/ *$//' | tr -d '\n')
+ok long_message_wraps_no_loss eq "$got" "$msg"
+ok long_message_rows sh -c "tail -n 3 '$D/eips.log' | cut -c3 | tr -d ' \n' | grep -q '^012\$'"
+msg=$(printf '0123456789%.0s' $(seq 1 40))
+sh -c '. "$1/launch-lib.sh"; say "$2"' sh "$BIN" "$msg" >/dev/null
+ok overflow_ends_with_dots sh -c "tail -n 1 '$D/eips.log' | sed 's/ *\$//' | grep -q '\.\.\.\$'"
+
 # menu.json / config.xml sanity
 ok menu_json_valid python3 -m json.tool "$PKG/menu.json"
 ok config_xml_valid python3 -c "import sys,xml.dom.minidom as m; m.parse(sys.argv[1])" "$PKG/config.xml"
