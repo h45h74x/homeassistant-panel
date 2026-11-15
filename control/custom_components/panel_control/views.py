@@ -47,7 +47,11 @@ def _num(v) -> bool:
     if isinstance(v, bool):
         return False
     if isinstance(v, int):
-        return v.bit_length() <= 1024  # must stay convertible to float (isfinite would raise)
+        try:
+            float(v)  # must be float-convertible: later HA/entity code calls float()
+        except OverflowError:
+            return False
+        return True
     return isinstance(v, float) and math.isfinite(v)
 
 

@@ -225,3 +225,18 @@ async def test_state_time_bounds(setup, t, status):
     _, dev, _ = setup
     await dev.hello()
     assert (await dev.state({}, time=t))[0] == status
+
+
+def _hello_with(**cap):
+    return {"contract": 1, "agent_version": "1", "capabilities": [{"id": "brightness", **cap}],
+            "device": {"name": "a", "manufacturer": "b", "model": "c", "sw_version": "d"}}
+
+
+@pytest.mark.parametrize("n,status", [(2**1024 - 1, 400), (2**1024 - 2**970, 400), (2**1023, 200)])
+async def test_float_boundary_ints(setup, n, status):
+    _, dev, _ = setup
+    for k in ("min", "max"):
+        assert (await dev.hello(_hello_with(**{k: n})))[0] == status
+    await dev.hello()
+    assert (await dev.state({"brightness": n}))[0] == status
+    assert (await dev.state({"brightness": 5}))[0] == 200
