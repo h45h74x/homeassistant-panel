@@ -84,5 +84,11 @@ def test_passphrase_vectors():
     vectors = json.loads((FIX / "passphrase-normalization.json").read_text())
     assert len(vectors) >= 8
     for v in vectors:
-        assert re.fullmatch(r"[a-z]+(-[a-z]+){4}", v["normalized"]), v
-        assert re.sub(r"[\s-]", "", v["input"]).lower() == v["normalized"].replace("-", ""), v
+        assert v["normalized"] == re.sub(r"[\s-]", "", v["input"].lower()), v
+        assert re.fullmatch(r"[a-z]+", v["normalized"]), v
+        assert len([w for w in re.split(r"[\s-]+", v["input"].strip()) if w]) == 5, v
+
+
+def test_passphrase_malformed():
+    for raw in json.loads((FIX / "passphrase-malformed.json").read_text()):
+        assert len([w for w in re.split(r"[\s-]+", raw.strip()) if w]) != 5, raw

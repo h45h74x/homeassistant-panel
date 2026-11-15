@@ -1,0 +1,1 @@
+{"config_rev":1,"commands":[{"id":"c1","capability":"refresh_screen","value":null,"issued_at":1763200000},{"id":"c2","capability":"keep_awake","value":true,"issued_at":1763200001},{"id":"c3","capability":"brightness","value":40.5,"issued_at":1763200002}]}
