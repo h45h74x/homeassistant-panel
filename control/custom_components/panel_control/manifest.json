@@ -5,8 +5,14 @@
   "config_flow": true,
   "integration_type": "device",
   "iot_class": "local_push",
-  "dependencies": ["http", "network"],
+  "dependencies": [
+    "http",
+    "network"
+  ],
   "requirements": [],
-  "codeowners": [],
-  "documentation": "https://github.com/simon/homeassistant-panel"
+  "codeowners": [
+    "@h45h74x"
+  ],
+  "documentation": "https://github.com/h45h74x/homeassistant-panel/tree/main/control/custom_components/panel_control",
+  "issue_tracker": "https://github.com/h45h74x/homeassistant-panel/issues"
 }
