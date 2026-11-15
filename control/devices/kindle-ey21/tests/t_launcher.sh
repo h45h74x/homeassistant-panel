@@ -35,13 +35,15 @@ sh "$BIN/start.sh" >/dev/null
 ok second_start_says_already_running has 'already running'
 ok second_start_single_process eq "$(nagents)" 1
 sh "$BIN/status.sh" >/dev/null
-ok status_prints_state_and_last_contact has 'state=running, last contact [0-9]* s ago'
+ok status_prints_state_and_last_contact sh -c "grep -q 'state=running' '$D/eips.log' && grep -q 'last contact [0-9]* s ago' '$D/eips.log'"
 ok status_not_stale sh -c "! grep -q STALE '$D/eips.log'"
 kill_child_test=$(pgrep -P "$(cat "$PANEL_PID")" sleep | head -n 1)
+ok child_existed_before_stop test -n "$kill_child_test"
+ok child_alive_before_stop kill -0 "${kill_child_test:-99999999}"
 sh "$BIN/stop.sh" >/dev/null; rc=$?
 ok stop_kills_agent sh -c "! kill -0 $(cat "$D/pid" 2>/dev/null || echo 99999999) 2>/dev/null"
 ok stop_removes_files sh -c "[ ! -e '$PANEL_PID' ] && [ ! -e '$PANEL_TMP' ] && [ ! -e '$PANEL_STATUS' ]"
-ok stop_kills_children sh -c "[ -z '$kill_child_test' ] || ! kill -0 $kill_child_test 2>/dev/null"
+ok stop_kills_children sh -c "! kill -0 ${kill_child_test:-99999999} 2>/dev/null && [ -n '$kill_child_test' ]"
 ok stop_zero eq $rc 0
 ok no_agent_left eq "$(nagents)" 0
 
@@ -62,6 +64,7 @@ sh "$BIN/start.sh" >/dev/null; rc=$?
 ok bad_config_rejected eq $rc 1
 ok bad_config_reason has 'token missing'
 ok bad_config_not_started eq "$(nagents)" 0
+ok say_pads_to_60 sh -c "awk '{ if (length(\$0) != 64) exit 1 }' '$D/eips.log'"
 ok lock_released test ! -e "$PANEL_PID.lock"
 
 begin t4
@@ -92,7 +95,7 @@ sh "$BIN/stop.sh" >/dev/null
 
 begin t7
 sh "$BIN/show-config.sh" >/dev/null
-ok show_config_plain_text has 'url=http://10.0.0.1:8123/api/x token=abc123 name=Kit'
+ok show_config_plain_text sh -c "grep -q 'url=http://10.0.0.1:8123/api/x' '$D/eips.log' && grep -q 'token=abc123' '$D/eips.log' && grep -q 'name=Kit' '$D/eips.log'"
 begin t8 nocfg
 sh "$BIN/show-config.sh" >/dev/null
 ok show_config_missing has 'config.sample'
@@ -102,9 +105,9 @@ begin t9
 mkdir -p "$D/dev/dest"
 cat > "$D/ssh" <<EOT
 #!/bin/sh
-case "\$2" in
-  *"[ -f"*) [ -f "$D/dev/dest/config" ] ;;
-  *) tar xf - -C "$D/dev/dest" ;;
+case "\$3" in
+  *"[ -f"*) echo check >> "$D/ssh.log"; [ -f "$D/dev/dest/config" ] ;;
+  *) echo xfer >> "$D/ssh.log"; tar xf - -C "$D/dev/dest" ;;
 esac
 EOT
 chmod +x "$D/ssh"
@@ -114,6 +117,34 @@ SSH="$D/ssh" sh "$here/../deploy.sh" devhost > "$D/out" 2>&1
 ok deploy_copies_files test -f "$D/dev/dest/bin/start.sh" -a -f "$D/dev/dest/menu.json" -a -f "$D/dev/dest/config.sample"
 ok deploy_keeps_config eq "$(cat "$D/dev/dest/config")" mine
 ok deploy_reports grep -q 'config exists' "$D/out"
+
+# foreign live process in the pid file must survive stop
+begin t10
+sleep 30 & other=$!
+echo $other > "$PANEL_PID"
+sh "$BIN/stop.sh" >/dev/null; rc=$?
+ok stop_spares_foreign_process kill -0 $other
+ok stop_foreign_not_running_msg has 'not running'
+ok stop_foreign_removes_pidfile test ! -e "$PANEL_PID"
+ok stop_foreign_rc eq $rc 0
+kill $other 2>/dev/null
+
+# deploy hardening
+begin t11
+mkdir -p "$D/dev/dest" "$D/sb"; printf '#!/bin/sh\nexit 1\n' > "$D/sb/tar"; chmod +x "$D/sb/tar"
+cp "$T/t9/ssh" "$D/ssh"; sed -i "s|$T/t9|$D|g" "$D/ssh"
+PATH="$D/sb:$PATH" SSH="$D/ssh" sh "$here/../deploy.sh" devhost >/dev/null 2>&1; rc=$?
+ok deploy_tar_failure_nonzero test $rc -ne 0
+ok deploy_tar_failure_no_transfer test ! -e "$D/ssh.log"
+SSH="$D/ssh" sh "$here/../deploy.sh" -oProxyCommand=x >/dev/null 2>&1; rc=$?
+ok deploy_refuses_dash_host test $rc -ne 0
+ok deploy_dash_host_no_ssh test ! -e "$D/ssh.log"
+
+# config.sample
+ok sample_url_line sh -c "grep -q '^#.*url *= *http://[0-9.]*:[0-9]*/api/panel_control/[a-z0-9_]*\$' '$PKG/config.sample'"
+. "$BIN/lib.sh"
+sed 's/^#\(url\)/\1/; s/^#\(token\)/\1/' "$PKG/config.sample" > "$T/sample.cfg"
+ok sample_loads sh -c ". '$BIN/lib.sh'; load_config '$T/sample.cfg'"
 
 # menu.json / config.xml sanity
 ok menu_json_valid python3 -m json.tool "$PKG/menu.json"

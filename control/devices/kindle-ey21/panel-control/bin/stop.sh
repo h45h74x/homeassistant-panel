@@ -14,7 +14,7 @@ if [ -n "$pid" ]; then
   kill $all 2>/dev/null
   _i=0
   while kill -0 "$pid" 2>/dev/null && [ $_i -lt 3 ]; do sleep 1; _i=$((_i+1)); done
-  kill -9 $all 2>/dev/null
+  for _k in $all; do kill -0 "$_k" 2>/dev/null && kill -9 "$_k" 2>/dev/null; done
   say "Panel Control stopped"
 else
   say "Panel Control not running"

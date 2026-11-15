@@ -9,7 +9,7 @@ A small shell agent that runs on the Kindle and connects it to Home Assistant: i
 
 ## Install
 
-- `sh deploy.sh <ssh-host>` copies `panel-control/` to `/mnt/us/extensions/panel-control` (an existing `config` on the device is never touched), or
+- `sh deploy.sh <ssh-host>` (GNU tar expected on the host) copies `panel-control/` to `/mnt/us/extensions/panel-control` (an existing `config` on the device is never touched), or
 - copy the `panel-control/` folder to `extensions/` over USB.
 
 Then copy `config.sample` to `config` (same folder) and fill in `url` and `token` from the HA pairing screen. `url` must contain an IP address, not a hostname: the Kindle cannot resolve `.local` names.
