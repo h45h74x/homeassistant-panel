@@ -45,6 +45,11 @@ test_keep_awake_get_set() {
 lipc-set-prop com.lab126.powerd preventScreenSaver 0" "$(cat "$STUB_LOG")"
 }
 test_refresh_screen_set() { fx; dev_set refresh_screen press >/dev/null; ok eips "eips -c" "$(cat "$STUB_LOG")"; no_ refresh_read dev_get refresh_screen; }
+test_sleep_set() {
+  fx; dev_set sleep press >/dev/null; ok sleep_lock "lipc-set-prop com.lab126.powerd powerButton 1" "$(cat "$STUB_LOG")"; no_ sleep_read dev_get sleep
+  fx; printf '#!/bin/sh\nexit 1\n' > "$T/failbin"; chmod +x "$T/failbin"; mkdir "$T/failp"; cp "$T/failbin" "$T/failp/lipc-set-prop"
+  PATH="$T/failp:$PATH"; _m=$(dev_set sleep press); _rc=$?; yes_ sleep_fail_rc test $_rc -ne 0; yes_ sleep_fail_reason test -n "$_m"
+}
 test_cpu_load() { fx; ok load 0.38 "$(get cpu_load)"; }
 test_memory_free_bytes() { fx; ok memfree $(( (12712+25196+82140)*1024 )) "$(get memory_free)"; }
 test_memory_total_bytes() { fx; ok memtotal 262328320 "$(get memory_total)"; }
@@ -76,10 +81,10 @@ test_cpu_usage_first_null_then_percent() {
 }
 test_unknown_id_returns_1() { fx; no_ unk dev_get nosuch; no_ unk_warmth dev_get warmth; no_ unk_bt dev_get battery_temperature; no_ unk_set dev_set nosuch 1; }
 test_capabilities_exclude_warmth_and_battery_temperature() {
-  fx; _c=$(dev_capabilities); ok ncaps 23 "$(printf '%s\n' "$_c" | wc -l | tr -d ' ')"
+  fx; _c=$(dev_capabilities); ok ncaps 24 "$(printf '%s\n' "$_c" | wc -l | tr -d ' ')"
   no_ has_warmth has "$_c" 'warmth.*'; no_ has_bt has "$_c" 'battery_temperature.*'
 }
-test_capabilities_flags() { fx; _c=$(dev_capabilities); yes_ rs_w has "$_c" 'refresh_screen w'; yes_ co_v has "$_c" 'clock_offset v'; yes_ bright has "$_c" brightness; }
+test_capabilities_flags() { fx; _c=$(dev_capabilities); yes_ rs_w has "$_c" 'refresh_screen w'; yes_ sleep_w has "$_c" 'sleep w'; yes_ co_v has "$_c" 'clock_offset v'; yes_ bright has "$_c" brightness; }
 test_identity_model_and_version() {
   fx; _i=$(dev_identity); yes_ i_model has "$_i" 'model=Kindle Paperwhite 1 (EY21)'
   yes_ i_sw has "$_i" 'sw_version=5.3.7'; yes_ i_name has "$_i" 'name=kindle-wall'
@@ -152,7 +157,7 @@ test_display_without_fbink_is_silent() {
   unset FBINK
 }
 
-for t in brightness_get_rounds brightness_set battery_and_charging power_state_mapping frontlight_on keep_awake_get_set refresh_screen_set \
+for t in brightness_get_rounds brightness_set battery_and_charging power_state_mapping frontlight_on keep_awake_get_set refresh_screen_set sleep_set \
   cpu_load memory_free_bytes memory_total_bytes storage_bytes_from_df rootfs_used_percent uptime battery_voltage_volts battery_current_ma \
   wifi_signal_percent kernel_version ip_and_mac_parse cpu_usage_first_null_then_percent unknown_id_returns_1 \
   capabilities_exclude_warmth_and_battery_temperature capabilities_flags identity_model_and_version serial_only_when_opted_in \
@@ -173,7 +178,7 @@ PANEL_STATUS="$D/status" PANEL_CONFIG="$D/config" PANEL_TMP="$D/tmp" DEVICE_LAYE
 _i=0; while [ $_i -lt 80 ] && ! grep -q 'flIntensity 12' "$STUB_LOG" 2>/dev/null; do sleep 0.1; _i=$((_i+1)); done
 sleep 1
 hello_line=$(grep '/hello ' "$LOG" | head -n 1)
-ok int_hello_23 23 "$(printf '%s' "$hello_line" | grep -o '"id":"[a-z_]*"' | sort -u | wc -l | tr -d ' ')"
+ok int_hello_24 24 "$(printf '%s' "$hello_line" | grep -o '"id":"[a-z_]*"' | sort -u | wc -l | tr -d ' ')"
 no_ int_hello_warmth sh -c "printf '%s' '$hello_line' | grep -q warmth"
 no_ int_hello_battery_temp sh -c "printf '%s' '$hello_line' | grep -q battery_temperature"
 yes_ int_state_battery sh -c "grep '/state ' '$LOG' | grep -q '\"battery_level\":88'"

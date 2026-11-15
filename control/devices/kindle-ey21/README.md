@@ -24,6 +24,10 @@ Show config draws the passphrase on the e-ink panel; it stays visible until the 
 
 The agent does not start on boot: start it from KUAL after every reboot.
 
+## Sleep button
+
+HA shows a button "Sleep" that locks the screen exactly like the power button. The Kindle suspends after about 30-60 s and goes unavailable in HA after about 3 minutes. HA cannot wake it: press the physical power button. After waking, the agent reconnects by itself within the backoff time (up to 2 minutes). Wall-panel tip: put a confirmation on the dashboard tap action.
+
 ## Status on screen
 
 "Status on screen: ON" creates the flag file `/mnt/us/extensions/panel-control/display.on` and draws three lines on the bottom rows; "OFF" removes the flag and blanks them. While the flag exists the agent keeps the lines current:

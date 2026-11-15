@@ -59,7 +59,7 @@ dev_capabilities() {
     return 0
   fi
   # warmth: no amber light. battery_temperature: unit unverified, not declared yet.
-  printf '%s\n' brightness keep_awake 'refresh_screen w' battery_level charging frontlight_on power_state \
+  printf '%s\n' brightness keep_awake 'refresh_screen w' 'sleep w' battery_level charging frontlight_on power_state \
     cpu_usage cpu_load memory_total memory_free storage_total storage_free rootfs_used_percent \
     'clock_offset v' uptime battery_voltage battery_current wifi_signal ip_address ssid mac_address kernel_version
 }
@@ -129,6 +129,7 @@ dev_set() {
       case "$2" in true) _v=1 ;; false) _v=0 ;; *) echo "keep_awake needs true/false"; return 1 ;; esac
       lipc-set-prop com.lab126.powerd preventScreenSaver "$_v" >/dev/null 2>&1 || { echo "lipc write failed"; return 1; } ;;
     refresh_screen) "$(_eips)" -c >/dev/null 2>&1 || { echo "eips failed"; return 1; } ;;
+    sleep) lipc-set-prop com.lab126.powerd powerButton 1 >/dev/null 2>&1 || { echo "lipc write failed"; return 1; } ;; # same path as the power button
     *) echo "unsupported"; return 1 ;;
   esac
 }

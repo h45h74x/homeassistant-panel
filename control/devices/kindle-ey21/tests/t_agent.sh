@@ -64,7 +64,7 @@ test_hello_then_state() {
 }
 test_hello_body_has_catalog_ids_only_and_no_warmth() {
   begin hello_body; mk "$(helloE 1 '"brightness"')"; run; wait_for '/hello ' 5
-  check hello_ids has 'body={"contract":1,"agent_version":"0.1.0","device":{"name":"FakeKindle".*"capabilities":\[{"id":"brightness"},{"id":"battery_level"},{"id":"cpu_load"},{"id":"refresh_screen"},{"id":"clock_offset"}\]}'
+  check hello_ids has 'body={"contract":1,"agent_version":"0.1.0","device":{"name":"FakeKindle".*"capabilities":\[{"id":"brightness"},{"id":"battery_level"},{"id":"cpu_load"},{"id":"refresh_screen"},{"id":"sleep"},{"id":"clock_offset"}\]}'
   check no_warmth hasnt warmth
   check no_serial hasnt serial_number
   stop_all
@@ -88,6 +88,15 @@ test_interval_respected() {
   sleep 4
   check once eq "$(cnt '/state .*cpu_load')" 1
   check heartbeats ge "$(cnt 'POST .*/state ')" 2
+  stop_all
+}
+test_sleep_command_press_and_ack() {
+  begin cmd_sleep; mk "$(helloE 1 '"brightness","sleep"')" "" \
+    '{"status":200,"body":{"config_rev":1,"commands":[{"id":"c1","capability":"sleep","value":null,"issued_at":1763200000}]}},'"$NOCMD"
+  run; wait_for '"acks":\[{"id":"c1","ok":true}\]' 8
+  check set_called grep -q '^sleep press$' "$FAKE_DIR/set.log"
+  check ack_state has '/state .*"acks":\[{"id":"c1","ok":true}\]'
+  check log_line grep -q 'cmd sleep ok' "$PANEL_LOG"
   stop_all
 }
 test_command_applied_and_acked() {
@@ -267,7 +276,7 @@ test_event_log_content() {
     '{"status":200,"body":{"config_rev":1,"commands":[{"id":"c1","capability":"brightness","value":40,"issued_at":1763200000},{"id":"c2","capability":"warmth","value":5,"issued_at":1763200000}]}},'"$NOCMD"
   run; wait_for '/state .*"acks":\[{"id":"c1"' 8; sleep 3
   check log_started plog_has '^[0-9][0-9]:[0-9][0-9]:[0-9][0-9] started$'
-  check log_hello plog_has ' hello ok (5 caps)$'
+  check log_hello plog_has ' hello ok (6 caps)$'
   check log_cmd_ok plog_has ' cmd brightness ok$'
   check log_cmd_failed plog_has ' cmd warmth FAILED: capability not declared$'
   check log_no_online_on_clean_run plog_hasnt ' online$'
@@ -321,8 +330,8 @@ test_display_draws_coalesces_and_clears() {
   mk "$(helloE 1 '"brightness"')"; run; wait_for '/hello ' 5; sleep 1
   check first_draw_only eq "$(disp_cnt)" 1
   check first_draw_line1 grep -q '^DRAW Panel Control: backoff no contact yet|' "$FAKE_DIR/disp.log"
-  wait_disp '^DRAW Panel Control: running [0-9][0-9]:[0-9][0-9]:[0-9][0-9]|.* started|[0-9:]* hello ok (5 caps)$' 8
-  check second_draw_running grep -q '^DRAW Panel Control: running [0-9][0-9]:[0-9][0-9]:[0-9][0-9]|.* started|[0-9:]* hello ok (5 caps)$' "$FAKE_DIR/disp.log"
+  wait_disp '^DRAW Panel Control: running [0-9][0-9]:[0-9][0-9]:[0-9][0-9]|.* started|[0-9:]* hello ok (6 caps)$' 8
+  check second_draw_running grep -q '^DRAW Panel Control: running [0-9][0-9]:[0-9][0-9]:[0-9][0-9]|.* started|[0-9:]* hello ok (6 caps)$' "$FAKE_DIR/disp.log"
   check exactly_two_draws eq "$(disp_cnt)" 2
   sleep 6
   check no_redraw_on_heartbeats eq "$(disp_cnt)" 2
@@ -386,7 +395,7 @@ test_event_log_exact_bounds() {
   stop_all
 }
 for t in hello_then_state hello_body_has_catalog_ids_only_and_no_warmth state_only_enabled_ids \
-  state_includes_time_and_not_virtual_or_write_only interval_respected command_applied_and_acked \
+  state_includes_time_and_not_virtual_or_write_only interval_respected command_applied_and_acked sleep_command_press_and_ack \
   undeclared_command_acked_not_ok dev_get_failure_sends_null config_rev_change_fetches_config \
   409_triggers_new_hello html_error_body_backoff_no_crash unreachable_server_backoff 401_sets_error_status \
   command_forces_reread command_with_new_config_rev_not_lost no_tight_loop_on_junk_200 409_always_not_tight \

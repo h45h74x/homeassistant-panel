@@ -283,12 +283,12 @@ rm -f "$PANEL_STATUS"; sh "$BIN/display-off.sh" >/dev/null
 sh "$BIN/display-on.sh" >/dev/null
 : > "$D/fbink.log"
 sh "$BIN/start.sh" >/dev/null
-printf '10:00:01 started\n10:00:02 hello ok (23 caps)\n10:00:03 cmd brightness ok\n' > "$PANEL_LOG"
+printf '10:00:01 started\n10:00:02 hello ok (24 caps)\n10:00:03 cmd brightness ok\n' > "$PANEL_LOG"
 printf 'state=running\nlast_contact=1\nlast_error=\n' > "$PANEL_STATUS"
 : > "$D/fbink.log"
 sh "$BIN/display-on.sh" >/dev/null
 ok on_state_and_last_two_log_lines eq "$(cat "$D/fbink.log")" '[-q][-p][-y][-3][Panel Control: running]
-[-q][-p][-y][-2][10:00:02 hello ok (23 caps)]
+[-q][-p][-y][-2][10:00:02 hello ok (24 caps)]
 [-q][-p][-y][-1][10:00:03 cmd brightness ok]'
 : > "$D/fbink.log"
 printf '10:00:01 started\n' > "$PANEL_LOG"
