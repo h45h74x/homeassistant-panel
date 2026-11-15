@@ -1,0 +1,3 @@
+#!/bin/sh
+f="$STUB_LIPC/$1.$2"; [ -r "$f" ] || { echo "$1 failed to access property $2 (0x8 lipcErrNoSuchProperty)" >&2; exit 1; }
+cat "$f"

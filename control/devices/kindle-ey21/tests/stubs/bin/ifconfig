@@ -1,0 +1,2 @@
+#!/bin/sh
+[ -r "$STUB_IFCONFIG" ] && cat "$STUB_IFCONFIG"

@@ -1,0 +1,4 @@
+#!/bin/sh
+for a; do last=$a; done
+f="$STUB_DF/$(printf '%s' "$last" | tr / _)"; [ -r "$f" ] || exit 1
+cat "$f"

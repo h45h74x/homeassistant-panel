@@ -1,0 +1,2 @@
+#!/bin/sh
+echo "${STUB_UNAME-2.6.31-rt11-lab126}"

@@ -1,0 +1,2 @@
+#!/bin/sh
+echo "lipc-set-prop $*" >> "$STUB_LOG"
