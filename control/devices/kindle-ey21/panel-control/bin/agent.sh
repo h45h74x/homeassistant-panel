@@ -60,11 +60,11 @@ http_call() { # <method> <path> [body-file]
 }
 
 # chk: call after http_call. 0 on 200; otherwise sets status, waits as needed, returns 1.
-BO=$BO_BASE; NEED_HELLO=1
+BO=$BO_BASE; NEED_HELLO=1; B409=1; APPLIED=0
 chk() {
   case "$HTTP_CODE" in
     200) BO=$BO_BASE; LAST_CONTACT=$(date +%s); set_status running ""; return 0 ;;
-    409) NEED_HELLO=1; return 1 ;;
+    409) NEED_HELLO=1; sleep "$B409"; B409=$((B409*2)); [ $B409 -le 120 ] || B409=120; return 1 ;;
     401) set_status error "unauthorized (check token)"; sleep "$AUTH_WAIT"; return 1 ;;
     429) set_status backoff "locked out"; sleep "$LOCKOUT_WAIT"; return 1 ;;
     000) fail_soft "curl error $CURL_RC" ;;
@@ -191,7 +191,9 @@ post_state() {
   printf '{"time":%s,"values":{%s},"acks":[%s]}' "$(date +%s)" "${VALS%,}" "${ACKS%,}" > "$PANEL_TMP/state.json"
   http_call POST state "$PANEL_TMP/state.json"
   if chk; then
-    ACKS=; LAST_STATE=$(date +%s); check_rev "$HTTP_BODY"
+    _sb=$HTTP_BODY   # check_rev's GET config overwrites HTTP_BODY
+    if [ -z "$(json_int config_rev "$_sb")" ]; then fail_soft "bad response"; reset_last; return; fi
+    ACKS=; LAST_STATE=$(date +%s); check_rev "$_sb"
   else
     reset_last   # values may not have arrived: resend everything
   fi
@@ -201,6 +203,7 @@ post_state() {
 apply_commands() { # <commands body>
   _cmds=$(parse_commands "$1")
   [ -n "$_cmds" ] || return 0
+  APPLIED=1
   while read -r _cid _cap _val; do
     _err=
     if ! safe_id "$_cap" || ! declared "$_cap"; then _err="capability not declared"
@@ -231,18 +234,31 @@ poll_commands() {
   _w=$((_next-_now)); [ $_w -le $PW ] || _w=$PW; [ $_w -ge 1 ] || _w=1
   HTTP_T=$((_w+10))
   http_call GET "commands?wait=$_w"
-  if chk; then check_rev "$HTTP_BODY"; apply_commands "$HTTP_BODY"; fi
+  if chk; then
+    _cb=$HTTP_BODY   # commands are fire-once: apply them before check_rev clobbers HTTP_BODY
+    if [ -z "$(json_int config_rev "$_cb")" ]; then fail_soft "bad response"; return; fi
+    B409=1
+    apply_commands "$_cb"; check_rev "$_cb"
+  fi
 }
 
 read_caps
 set_status backoff "starting"
+PREV_NOW=0
 while :; do
+  _now=$(date +%s)
+  case "$_now" in ''|*[!0-9]*) fail_soft "bad clock"; continue ;; esac
+  # clock set backwards (Kindle syncs time after Wi-Fi): restart heartbeat and interval timers
+  if [ "$_now" -lt "$PREV_NOW" ]; then LAST_STATE=0; reset_last; fi
+  PREV_NOW=$_now; _t0=$_now; APPLIED=0
   if [ $NEED_HELLO = 1 ]; then do_hello || continue; fi
   collect
-  _now=$(date +%s)
   if [ -n "$VALS" ] || [ -n "$ACKS" ] || [ $((_now-LAST_STATE)) -ge "$HB" ]; then
     post_state
     [ $NEED_HELLO = 0 ] || continue
   fi
   poll_commands
+  # floor: never spin faster than 1 iteration/s unless commands were just applied
+  _e=$(date +%s)
+  [ "$APPLIED" = 1 ] || [ $((_e-_t0)) -ge 1 ] 2>/dev/null || sleep 1
 done

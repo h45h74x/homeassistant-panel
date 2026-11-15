@@ -4,7 +4,9 @@ here=$(cd "$(dirname "$0")" && pwd)
 AGENT="$here/../panel-control/bin/agent.sh"
 T=$(mktemp -d); MOCK_PID=; AGENT_PID=
 FAILS=0; N=0
-cleanup() { [ -n "$MOCK_PID" ] && kill "$MOCK_PID" 2>/dev/null; [ -n "$AGENT_PID" ] && kill "$AGENT_PID" 2>/dev/null; rm -rf "$T"; }
+kill_tree() { for _c in $(pgrep -P "$1" 2>/dev/null); do kill_tree "$_c"; done; kill "$1" 2>/dev/null; }
+kill_agent() { [ -n "$AGENT_PID" ] || return 0; kill -STOP "$AGENT_PID" 2>/dev/null; kill_tree "$AGENT_PID"; kill -CONT "$AGENT_PID" 2>/dev/null; }
+cleanup() { kill_agent; [ -n "$MOCK_PID" ] && kill "$MOCK_PID" 2>/dev/null; rm -rf "$T"; }
 trap cleanup EXIT
 check() { N=$((N+1)); _n=$1; shift; if ! "$@" >/dev/null 2>&1; then FAILS=$((FAILS+1)); echo "FAIL $_n"; [ -f "$LOG" ] && sed 's/^/    log: /' "$LOG" | head -20; fi; }
 cnt() { grep -c -e "$1" "$LOG" 2>/dev/null || true; }
@@ -39,7 +41,7 @@ start_mock() {
 write_cfg() { printf 'url = http://127.0.0.1:%s/api/panel_control/k/\ntoken = Maple-Orbit-Tiger-Quilt-Ember\n%s' "$PORT" "$1" > "$PANEL_CONFIG"; }
 start_agent() { sh "$AGENT" >"$D/agent.out" 2>&1 & AGENT_PID=$!; }
 stop_all() {
-  [ -n "$AGENT_PID" ] && kill "$AGENT_PID" 2>/dev/null; [ -n "$MOCK_PID" ] && kill "$MOCK_PID" 2>/dev/null
+  kill_agent; [ -n "$MOCK_PID" ] && kill "$MOCK_PID" 2>/dev/null
   wait 2>/dev/null; AGENT_PID=; MOCK_PID=; }
 run() { start_mock; write_cfg "$1"; start_agent; }  # <extra config lines>
 alive() { kill -0 "$AGENT_PID" 2>/dev/null; }
@@ -121,7 +123,6 @@ test_config_rev_change_fetches_config() {
 }
 test_409_triggers_new_hello() {
   begin conflict; mk "$(helloE 1 '"brightness"')" '{"status":409,"body":{"error":"hello_required"}},'"$OKSTATE"; run
-  wait_for 'zzz' 0
   _i=0; while [ "$(cnt '/hello ')" -lt 2 ] && [ $_i -lt 80 ]; do sleep 0.1; _i=$((_i+1)); done
   check second_hello ge "$(cnt '/hello ')" 2
   stop_all
@@ -166,10 +167,13 @@ test_429_waits() {
   stop_all
 }
 test_poll_wait_never_zero() {
-  begin wait_min; mk "$(helloE 1 '"brightness"')"; run
+  # interval 1 s but the state post takes 1.5 s: the unclamped wait would be <= 0
+  begin wait_min; mk '{"status":200,"body":{"contract":1,"heartbeat_s":60,"poll_wait_s":25,"config":{"config_rev":1,"enabled":["cpu_load"],"interval_s":{"cpu_load":1}}}}' \
+    '{"status":200,"delay":1.5,"body":{"config_rev":1}}'; run
   _i=0; while [ "$(cnt 'GET .*commands?')" -lt 2 ] && [ $_i -lt 80 ]; do sleep 0.1; _i=$((_i+1)); done
-  check polled ge "$(cnt 'GET .*commands?wait=[1-9]')" 2
-  check no_zero hasnt 'commands?wait=0'
+  check polled ge "$(cnt 'GET .*commands?')" 2
+  check first_wait_is_1 has '^GET [^ ]*commands?wait=1 '
+  check no_zero_or_neg hasnt 'commands?wait=\(0\|-\)'
   stop_all
 }
 test_serial_only_with_opt_in() {
@@ -186,13 +190,73 @@ test_crlf_config() {
   check crlf_state has '^POST .*/state auth=Bearer Maple-Orbit-Tiger-Quilt-Ember body='
   stop_all
 }
+test_command_forces_reread() {
+  begin cmd_same; mk "$(helloE 1 '"brightness"')" "" \
+    '{"status":200,"body":{"config_rev":1,"commands":[{"id":"c2","capability":"brightness","value":10,"issued_at":1763200000}]}},'"$NOCMD"
+  run; wait_for '"acks":\[{"id":"c2","ok":true}\]' 8
+  check set_called grep -q '^brightness 10$' "$FAKE_DIR/set.log"
+  check value_sent_with_ack has '/state .*"values":{"brightness":10},"acks":\[{"id":"c2","ok":true}\]'
+  stop_all
+}
+test_command_with_new_config_rev_not_lost() {
+  begin cmd_rev; mk "$(helloE 1 '"brightness"')" '{"status":200,"body":{"config_rev":1}},{"status":200,"body":{"config_rev":2}}' \
+    '{"status":200,"body":{"config_rev":2,"commands":[{"id":"c1","capability":"brightness","value":40,"issued_at":1763200000}]}},{"status":200,"body":{"config_rev":2,"commands":[]}}' \
+    '{"status":200,"body":{"config_rev":2,"enabled":["brightness","battery_level"],"interval_s":{}}}'
+  run; wait_for '"acks":\[{"id":"c1","ok":true}\]' 8
+  check applied grep -q '^brightness 40$' "$FAKE_DIR/set.log"
+  check acked has '/state .*"acks":\[{"id":"c1","ok":true}\]'
+  check config_fetched has '^GET /api/panel_control/k/config '
+  wait_for '/state .*"battery_level":80' 6
+  check new_config_used has '/state .*"battery_level":80'
+  stop_all
+}
+test_no_tight_loop_on_junk_200() {
+  _k=0; for _b in '{}' '<html>portal</html>' '' ; do
+    _k=$((_k+1)); begin junk$_k; E="{\"status\":200,\"body\":$(printf '%s' "$_b" | python3 -c 'import json,sys;print(json.dumps(sys.stdin.read()))')}"
+    mk "$(helloE 1 '"brightness"')" "$OKSTATE" "$E"; run; sleep 4
+    check "junk_bounded[$_b]" ge 12 "$(cnt 'GET .*commands?')"
+    check "junk_alive[$_b]" alive
+    stop_all
+  done
+  begin instant; mk "$(helloE 1 '"brightness"')" "$OKSTATE" '{"status":200,"delay":0,"body":{"config_rev":1,"commands":[]}}'; run; sleep 4
+  check instant_bounded ge 8 "$(cnt 'GET .*commands?')"
+  stop_all
+}
+test_409_always_not_tight() {
+  begin always409; mk "$(helloE 1 '"brightness"')" '{"status":409,"body":{"error":"hello_required"}}'; run; sleep 5
+  check bounded ge 12 "$(( $(cnt '/hello ') + $(cnt '/state ') ))"
+  check rehello ge "$(cnt '/hello ')" 2
+  stop_all
+}
+mk_date_stub() { # <mode: back|empty>: from the 10th call on, date +%s is 1000 s earlier / empty
+  mkdir -p "$D/bin"
+  cat > "$D/bin/date" <<EOS
+#!/bin/sh
+f="$D/dn"; n=\$(cat \$f 2>/dev/null || echo 0); n=\$((n+1)); echo \$n > \$f
+r=\$(/bin/date +%s)
+if [ \$n -ge 10 ]; then case "$1" in empty) echo ;; *) echo \$((r-1000)) ;; esac; else echo \$r; fi
+EOS
+  chmod +x "$D/bin/date"
+}
+run_stub() { start_mock; write_cfg ""; _p=$PATH; PATH="$D/bin:$PATH"; start_agent; PATH=$_p; }
+test_clock_jump_back_does_not_stall() {
+  begin clock_back; mk "$(helloE 1 '"brightness"')"; mk_date_stub back; run_stub; sleep 7
+  check heartbeats_continue ge "$(cnt 'POST .*/state ')" 3
+  stop_all
+}
+test_bad_clock_no_crash() {
+  begin clock_empty; mk "$(helloE 1 '"brightness"')"; mk_date_stub empty; run_stub; sleep 4
+  check alive alive
+  stop_all
+}
 test_second_instance_is_not_this_task() { echo "SKIP second_instance (launcher, Task 4)"; }
 
 for t in hello_then_state hello_body_has_catalog_ids_only_and_no_warmth state_only_enabled_ids \
   state_includes_time_and_not_virtual_or_write_only interval_respected command_applied_and_acked \
   undeclared_command_acked_not_ok dev_get_failure_sends_null config_rev_change_fetches_config \
   409_triggers_new_hello html_error_body_backoff_no_crash unreachable_server_backoff 401_sets_error_status \
-  bad_config_exit_2 429_waits poll_wait_never_zero serial_only_with_opt_in crlf_config second_instance_is_not_this_task; do
+  command_forces_reread command_with_new_config_rev_not_lost no_tight_loop_on_junk_200 409_always_not_tight \
+  clock_jump_back_does_not_stall bad_clock_no_crash bad_config_exit_2 429_waits poll_wait_never_zero serial_only_with_opt_in crlf_config second_instance_is_not_this_task; do
   "test_$t"
 done
 check no_schema_errors sh -c "! grep -r -e '-ERROR' $T --include=log"
