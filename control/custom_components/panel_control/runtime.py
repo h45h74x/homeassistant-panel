@@ -27,7 +27,7 @@ CATALOG = {
 }
 COMMAND_TTL = 300
 _LOG = logging.getLogger(__name__)
-_CTRL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+_CTRL = re.compile(r"[\x00-\x1f\x7f-\x9f  ]")
 
 
 class DeviceRuntime:
@@ -99,10 +99,11 @@ class DeviceRuntime:
         self.touch()
         self.last_acks = list(state.get("acks", []))
         for a in self.last_acks:
-            if not a["ok"]:
-                err = _CTRL.sub(" ", a.get("error", ""))[:100]
+            if isinstance(a, dict) and a.get("ok") is False:
+                err = _CTRL.sub(" ", str(a.get("error") or ""))[:100]
+                cid = _CTRL.sub(" ", str(a.get("id")))[:32]
                 _LOG.warning("device %s: command %s (capability %s) failed: %s", self.device_id,
-                             a["id"], self._recent.get(a["id"], "unknown"), err)
+                             cid, self._recent.get(a.get("id"), "unknown"), err)
         ok = lambda i: i in self.declared and i in enabled  # noqa: E731
         out = {i: v for i, v in state.get("values", {}).items()
                if ok(i) and i != "clock_offset" and CATALOG[i]["access"] != "w"}

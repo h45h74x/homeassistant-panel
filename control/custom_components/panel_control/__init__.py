@@ -4,6 +4,7 @@ Persistence: one Store per entry (`panel_control.<device_id>`) holds the declare
 capabilities and the hello device block (without serial_number), so entities exist
 (unavailable) after a restart until the device sends hello again.
 """
+import logging
 from datetime import timedelta
 
 from homeassistant.config_entries import ConfigEntry
@@ -18,11 +19,25 @@ from .enablement import compute_enabled, default_enabled
 from .entity import device_info
 from .lockout import Lockout
 from .runtime import CATALOG, DeviceRuntime
-from .views import CommandsView, ConfigView, HEARTBEAT_S, HelloView, StateView
+from .views import _num, CommandsView, ConfigView, HEARTBEAT_S, HelloView, StateView
 from .views import signal as state_signal
 
+_LOGGER = logging.getLogger(__name__)
 PLATFORMS = ["number", "switch", "button", "sensor", "binary_sensor"]
 _SAFE_DEVICE = ("name", "manufacturer", "model", "sw_version", "hw_version", "mac")
+
+
+def _clean_caps(items: list) -> list[dict]:
+    """Keep known, unique ids; keep min/max only if both are finite numbers (or absent) and ordered."""
+    out: dict[str, dict] = {}
+    for c in items:
+        if not isinstance(c, dict) or c.get("id") not in CATALOG or c["id"] in out:
+            continue
+        b = {k: c[k] for k in ("min", "max") if k in c}
+        if not all(_num(v) for v in b.values()) or (len(b) == 2 and b["min"] > b["max"]):
+            b = {}
+        out[c["id"]] = {"id": c["id"], **b}
+    return list(out.values())
 
 
 def _store(hass: HomeAssistant, device_id: str) -> Store:
@@ -39,21 +54,21 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     device_id = entry.data["device_id"]
     store = _store(hass, device_id)
-    saved = await store.async_load()
+    try:
+        saved = await store.async_load()
+    except Exception:  # noqa: BLE001 - e.g. unknown stored version: start empty, hello refills it
+        _LOGGER.warning("panel_control %s: stored data unreadable, starting empty", device_id)
+        saved = None
     if not isinstance(saved, dict):
         saved = {}
     caps = saved.get("declared")
-    caps = [c for c in caps if isinstance(c, dict) and c.get("id") in CATALOG] \
-        if isinstance(caps, list) else []
+    caps = _clean_caps(caps) if isinstance(caps, list) else []
     dev = saved.get("device")
     dev = {k: v for k, v in dev.items() if k in _SAFE_DEVICE and isinstance(v, str)} \
         if isinstance(dev, dict) else {}
     rt = DeviceRuntime(device_id, default_enabled)
     # no hello yet: state/commands/config answer 409 until one arrives
-    try:
-        rt.restore(caps, dev)
-    except (ValueError, TypeError, KeyError):  # e.g. duplicate ids or bad min/max in a corrupt store
-        rt.restore([], {})
+    rt.restore(caps, dev)
     hass.data[DOMAIN]["entries"][entry.entry_id] = (rt, entry.data["passphrase"])
     entry.async_on_unload(entry.add_update_listener(_reload))  # new passphrase takes effect at once
 

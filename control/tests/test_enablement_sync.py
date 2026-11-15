@@ -116,3 +116,50 @@ async def test_corrupt_store_does_not_fail_setup(hass, hass_client_no_auth, hass
     for i in range(5):
         d = FakeDevice(client, f"/api/panel_control/k{i}", PASS)
         assert (await d.hello())[0] == 200
+
+
+async def _boot(hass, hass_client_no_auth, hass_storage, did, stored):
+    hass_storage[f"{DOMAIN}.{did}"] = stored
+    MockConfigEntry(domain=DOMAIN, unique_id=did, data={"device_id": did, "passphrase": PASS,
+                                                        "name": "K"}).add_to_hass(hass)
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+    return FakeDevice(await hass_client_no_auth(), f"/api/panel_control/{did}", PASS)
+
+
+@pytest.mark.parametrize("ver", [(99, 1), (1, 99), (0, 0)])
+async def test_store_version_mismatch_does_not_fail_setup(hass, hass_client_no_auth, hass_storage, ver):
+    d = await _boot(hass, hass_client_no_auth, hass_storage, "kv", {
+        "version": ver[0], "minor_version": ver[1], "key": f"{DOMAIN}.kv",
+        "data": {"declared": [{"id": "brightness"}], "device": {"name": "x"}}})
+    assert (await d.hello())[0] == 200
+
+
+@pytest.mark.parametrize("bad", [{"min": "x"}, {"max": [1]}, {"max": float("nan")}, {"min": float("inf")},
+                                 {"max": True}, {"min": 50, "max": 10}])
+async def test_stored_bad_bounds_are_ignored(hass, hass_client_no_auth, hass_storage, bad):
+    d = await _boot(hass, hass_client_no_auth, hass_storage, "kb", {
+        "version": 1, "minor_version": 1, "key": f"{DOMAIN}.kb",
+        "data": {"declared": [{"id": "brightness", **bad}, {"id": "battery_level"}, {"id": "zzz"}, {"id": "ssid", "min": "q"}],
+                 "device": {}}})
+    rt = hass.data[DOMAIN]["entries"][next(iter(hass.data[DOMAIN]["entries"]))][0]
+    assert set(rt.declared) >= {"brightness", "battery_level"} and "zzz" not in rt.declared
+    rt.config(rt.enabled)
+    ids = {e.unique_id for e in er.async_entries_for_config_entry(
+        er.async_get(hass), hass.config_entries.async_entries(DOMAIN)[0].entry_id)}
+    assert "kb_brightness" in ids and "kb_battery_level" in ids
+    assert (await d.hello())[0] == 200
+
+
+async def test_ack_logging_never_breaks_apply_state(hass, setup, caplog):
+    entry, dev = setup
+    await _hello_ok(hass, dev)
+    rt = hass.data[DOMAIN]["entries"][entry.entry_id][0]
+    caplog.set_level(logging.WARNING)
+    acks = [{"id": "a", "ok": False, "error": e} for e in (None, 5, ["x"], {"k": 1}, "y" * 10000, "a b c")]
+    acks.append({"id": "i\n\x1b[31m" + "d" * 100, "ok": False})
+    rt.apply_state({"time": 1763200000, "values": {}, "acks": acks}, rt.enabled)
+    msgs = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(msgs) == 7
+    for m in msgs:
+        assert not any(c in m for c in "\n\x1b  ") and len(m) < 250
