@@ -7,14 +7,14 @@ capabilities and the hello device block (without serial_number), so entities exi
 from datetime import timedelta
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers import device_registry as dr
+from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.storage import Store
 
 from .const import DOMAIN, hello_signal
-from .enablement import default_enabled
+from .enablement import compute_enabled, default_enabled
 from .entity import device_info
 from .lockout import Lockout
 from .runtime import CATALOG, DeviceRuntime
@@ -39,11 +39,21 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     device_id = entry.data["device_id"]
     store = _store(hass, device_id)
-    saved = await store.async_load() or {}
+    saved = await store.async_load()
+    if not isinstance(saved, dict):
+        saved = {}
+    caps = saved.get("declared")
+    caps = [c for c in caps if isinstance(c, dict) and c.get("id") in CATALOG] \
+        if isinstance(caps, list) else []
+    dev = saved.get("device")
+    dev = {k: v for k, v in dev.items() if k in _SAFE_DEVICE and isinstance(v, str)} \
+        if isinstance(dev, dict) else {}
     rt = DeviceRuntime(device_id, default_enabled)
     # no hello yet: state/commands/config answer 409 until one arrives
-    rt.restore([c for c in saved.get("declared", []) if c.get("id") in CATALOG],
-               {k: v for k, v in saved.get("device", {}).items() if k in _SAFE_DEVICE})
+    try:
+        rt.restore(caps, dev)
+    except (ValueError, TypeError, KeyError):  # e.g. duplicate ids or bad min/max in a corrupt store
+        rt.restore([], {})
     hass.data[DOMAIN]["entries"][entry.entry_id] = (rt, entry.data["passphrase"])
     entry.async_on_unload(entry.add_update_listener(_reload))  # new passphrase takes effect at once
 
@@ -62,6 +72,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     sync_device()
     entry.async_on_unload(async_dispatcher_connect(hass, hello_signal(device_id), on_hello))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    @callback
+    def sync_enabled() -> None:
+        rt.set_enabled(compute_enabled(hass, entry.entry_id, rt))
+
+    @callback
+    def on_registry(event: Event) -> None:
+        if event.data["action"] == "remove":  # entry already gone, cannot tell whose it was
+            return sync_enabled()
+        e = er.async_get(hass).async_get(event.data["entity_id"])
+        if e and e.platform == DOMAIN and e.unique_id.startswith(f"{device_id}_"):
+            sync_enabled()
+
+    sync_enabled()
+    entry.async_on_unload(hass.bus.async_listen(er.EVENT_ENTITY_REGISTRY_UPDATED, on_registry))
     # entities re-check availability, so they go unavailable after 3 missed heartbeats
     entry.async_on_unload(async_track_time_interval(
         hass, tick, timedelta(seconds=HEARTBEAT_S)))

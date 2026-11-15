@@ -13,6 +13,8 @@ from . import passphrase
 from .const import DOMAIN
 
 DEFAULT_PORT = 8123
+NO_IP_NOTE = ("The address of this Home Assistant machine could not be determined. "
+              "Enter the HA machine's LAN IP in the Kindle config instead of <HA-IP>.")
 NOTE = "The Kindle cannot resolve .local names, use an IP."
 
 
@@ -25,10 +27,17 @@ async def _base_url(hass: HomeAssistant) -> tuple[str, str]:
             return url, ""
         except ValueError:
             return url, NOTE
-    ip = await async_get_source_ip(hass)
-    host = f"[{ip}]" if ":" in ip else ip
+    try:
+        ip = await async_get_source_ip(hass)
+        if not ip or ipaddress.ip_address(ip).is_loopback:
+            ip = None
+    except Exception:  # noqa: BLE001 - never 500 the pairing form
+        ip = None
     # hass.config.api.port is set by the http component (a dependency); HTTPServer has no port attribute
     port = getattr(hass.config.api, "port", None) or DEFAULT_PORT
+    if ip is None:
+        return f"http://<HA-IP>:{port}", NO_IP_NOTE
+    host = f"[{ip}]" if ":" in ip else ip
     return f"http://{host}:{port}", ""
 
 

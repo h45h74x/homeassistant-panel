@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import re
 import math
 import time
 import zlib
@@ -24,6 +26,8 @@ CATALOG = {
     for c in json.loads((Path(__file__).parent / "catalog.json").read_text())["capabilities"]
 }
 COMMAND_TTL = 300
+_LOG = logging.getLogger(__name__)
+_CTRL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 
 
 class DeviceRuntime:
@@ -40,6 +44,7 @@ class DeviceRuntime:
         self.last_contact: float | None = None
         self.last_acks: list[dict] = []
         self._queue: dict[str, dict] = {}
+        self._recent: dict[str, str] = {}  # last 64 command ids -> capability, for ack logs
         self._counter = 0
         self._waiter: asyncio.Future | None = None
 
@@ -93,6 +98,11 @@ class DeviceRuntime:
     def apply_state(self, state: dict, enabled: set[str]) -> dict[str, Any]:
         self.touch()
         self.last_acks = list(state.get("acks", []))
+        for a in self.last_acks:
+            if not a["ok"]:
+                err = _CTRL.sub(" ", a.get("error", ""))[:100]
+                _LOG.warning("device %s: command %s (capability %s) failed: %s", self.device_id,
+                             a["id"], self._recent.get(a["id"], "unknown"), err)
         ok = lambda i: i in self.declared and i in enabled  # noqa: E731
         out = {i: v for i, v in state.get("values", {}).items()
                if ok(i) and i != "clock_offset" and CATALOG[i]["access"] != "w"}
@@ -131,6 +141,9 @@ class DeviceRuntime:
             raise ValueError(f"{capability} not commandable")
         self._counter += 1
         cid = f"c{self._counter:x}"
+        self._recent[cid] = capability
+        while len(self._recent) > 64:
+            del self._recent[next(iter(self._recent))]
         self._queue[capability] = {"id": cid, "capability": capability, "value": value,
                                    "issued_at": int(self._now())}
         if self._waiter and not self._waiter.done():

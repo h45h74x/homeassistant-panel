@@ -1,6 +1,8 @@
 import ipaddress
 from urllib.parse import urlparse
 
+from unittest.mock import patch
+
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -113,3 +115,13 @@ async def test_old_passphrase_401_new_works(hass, hass_client_no_auth):
     new = await _regenerate(hass, entry)
     assert (await FakeDevice(client, base, old).hello())[0] == 401
     assert (await FakeDevice(client, base, new).hello())[0] == 200
+
+
+@pytest.mark.parametrize("result", [None, "127.0.0.1", "::1", RuntimeError("boom")])
+async def test_pairing_without_usable_ip_shows_placeholder(hass, result):
+    hass.config.internal_url = None
+    kw = {"side_effect": result} if isinstance(result, Exception) else {"return_value": result}
+    with patch("custom_components.panel_control.config_flow.async_get_source_ip", **kw):
+        r = await _start(hass)
+    ph = r["description_placeholders"]
+    assert r["step_id"] == "pairing" and "<HA-IP>" in ph["url"] and "LAN IP" in ph["url_note"]
