@@ -30,6 +30,7 @@ helloE() { printf '{"status":200,"body":%s}' "$(H "$@")"; }
 begin() { # <name>: new case dir, exports env for the agent
   D="$T/$1"; mkdir -p "$D/fake"; LOG="$D/log"; STATUS="$D/status"; : > "$LOG"
   export FAKE_DIR="$D/fake" PANEL_STATUS="$STATUS" PANEL_TMP="$D/tmp" PANEL_CONFIG="$D/config" \
+    PANEL_LOG="$D/panel.log" PANEL_DISPLAY_FLAG="$D/display.on" PANEL_DISPLAY_MIN=1 \
     DEVICE_LAYER="$here/fake_device.sh" PANEL_BACKOFF_BASE=1 PANEL_LOCKOUT_WAIT=2 PANEL_AUTH_WAIT=30
   unset FAKE_FAIL_GET
 }
@@ -51,7 +52,7 @@ lt() { [ -n "$1" ] && [ -n "$2" ] && [ "$1" -lt "$2" ]; }
 
 test_hello_then_state() {
   begin hello_state; mk "$(helloE 1 '"brightness"')"; run
-  wait_for '^POST .*/state ' 6
+  wait_for '^POST .*/state ' 6; wait_for '^GET .*/commands?wait=' 3
   check hello_first eq "$(head -n 1 "$LOG" | cut -c1-4)" POST
   check hello_path has '^POST /api/panel_control/k/hello auth=Bearer Maple-Orbit-Tiger-Quilt-Ember body='
   check hello_before_state lt "$(before '/hello ')" "$(before '/state ')"
@@ -258,12 +259,86 @@ test_token_with_quote_and_backslash_exact() {
 }
 test_second_instance_is_not_this_task() { echo "SKIP second_instance (launcher, Task 4)"; }
 
+plog_has() { grep -q -e "$1" "$PANEL_LOG"; }
+plog_hasnt() { ! grep -q -e "$1" "$PANEL_LOG" 2>/dev/null; }
+disp_cnt() { grep -c "^DRAW" "$FAKE_DIR/disp.log" 2>/dev/null || true; }
+test_event_log_content() {
+  begin evlog; mk "$(helloE 1 '"brightness"')" "" \
+    '{"status":200,"body":{"config_rev":1,"commands":[{"id":"c1","capability":"brightness","value":40,"issued_at":1763200000},{"id":"c2","capability":"warmth","value":5,"issued_at":1763200000}]}},'"$NOCMD"
+  run; wait_for '/state .*"acks":\[{"id":"c1"' 8; sleep 3
+  check log_started plog_has '^[0-9][0-9]:[0-9][0-9]:[0-9][0-9] started$'
+  check log_hello plog_has ' hello ok (5 caps)$'
+  check log_cmd_ok plog_has ' cmd brightness ok$'
+  check log_cmd_failed plog_has ' cmd warmth FAILED: capability not declared$'
+  check log_no_online_on_clean_run plog_hasnt ' online$'
+  check log_not_spammed ge 8 "$(wc -l < "$PANEL_LOG" | tr -d ' ')"
+  for _s in Maple B0TESTSERIAL aa:bb 'token' 127.0.0.1 '"value"'; do check "log_no_secret_$_s" plog_hasnt "$_s"; done
+  stop_all
+}
+test_event_log_failure_then_online() {
+  begin evfail; mk '{"status":500,"body":"x"},'"$(helloE 1 '"brightness"')"; run; wait_for '/state ' 8; sleep 1
+  check log_http_500 plog_has ' http 500, retry in 1s$'
+  check log_online plog_has ' online$'
+  check log_online_after_failure lt "$(grep -n 'http 500' "$PANEL_LOG" | head -n 1 | cut -d: -f1)" "$(grep -n ' online$' "$PANEL_LOG" | head -n 1 | cut -d: -f1)"
+  check log_online_once eq "$(grep -c ' online$' "$PANEL_LOG")" 1
+  stop_all
+}
+test_event_log_unreachable_401_429_409() {
+  begin evunr; PORT=1; write_cfg ""; start_agent; sleep 2
+  check log_unreachable plog_has ' HA unreachable, retry in 1s$'
+  stop_all
+  begin ev401; mk '{"status":401,"body":{"error":"unauthorized"}}'; run; sleep 2
+  check log_401 plog_has ' unauthorized (check token)$'
+  check log_401_once eq "$(grep -c unauthorized "$PANEL_LOG")" 1
+  stop_all
+  begin ev429; mk '{"status":429,"body":{"error":"locked_out"}},'"$(helloE 1 '"brightness"')"; run; sleep 1
+  check log_429 plog_has ' locked out, wait 2s$'
+  stop_all
+  begin ev409; mk "$(helloE 1 '"brightness"')" '{"status":409,"body":{"error":"hello_required"}},'"$OKSTATE"; run; sleep 3
+  check log_409 plog_has ' 409 re-hello$'
+  stop_all
+}
+test_event_log_bounded() {
+  begin evbound; _i=0; while [ $_i -lt 60 ]; do echo "00:00:00 old $_i" >> "$PANEL_LOG"; _i=$((_i+1)); done
+  mk "$(helloE 1 '"brightness"')"; run; wait_for '/state ' 6; sleep 1
+  check log_trimmed ge 45 "$(wc -l < "$PANEL_LOG" | tr -d ' ')"
+  check log_keeps_recent plog_has ' hello ok'
+  check log_keeps_tail_of_old plog_has 'old 59$'
+  check log_drops_head_of_old plog_hasnt 'old 0$'
+  check log_no_tmp_left test ! -e "$PANEL_LOG.tmp"
+  stop_all
+}
+test_display_inert_without_flag() {
+  begin disp_off; mk "$(helloE 1 '"brightness"')"; run; sleep 4
+  check no_draw test ! -s "$FAKE_DIR/disp.log"
+  stop_all
+}
+test_display_draws_coalesces_and_clears() {
+  begin disp_on; : > "$D/display.on"; export PANEL_DISPLAY_MIN=4
+  mk "$(helloE 1 '"brightness"')"; run; wait_for '/hello ' 5; sleep 1
+  check first_draw_only eq "$(disp_cnt)" 1
+  check first_draw_line1 grep -q '^DRAW Panel Control: backoff no contact yet|' "$FAKE_DIR/disp.log"
+  sleep 5
+  check second_draw ge "$(disp_cnt)" 2
+  check second_draw_running grep -q '^DRAW Panel Control: running [0-9][0-9]:[0-9][0-9]:[0-9][0-9]|.* started|[0-9:]* hello ok (5 caps)$' "$FAKE_DIR/disp.log"
+  _c=$(disp_cnt); sleep 5
+  check no_redraw_on_heartbeats eq "$(disp_cnt)" "$_c"
+  check no_secret_on_display sh -c "! grep -q -e Maple -e B0TESTSERIAL -e aa:bb '$FAKE_DIR/disp.log'"
+  rm -f "$D/display.on"; sleep 4
+  check cleared_once eq "$(grep -c '^CLEAR' "$FAKE_DIR/disp.log")" 1
+  sleep 3
+  check cleared_only_once eq "$(grep -c '^CLEAR' "$FAKE_DIR/disp.log")" 1
+  export PANEL_DISPLAY_MIN=1
+  stop_all
+}
 for t in hello_then_state hello_body_has_catalog_ids_only_and_no_warmth state_only_enabled_ids \
   state_includes_time_and_not_virtual_or_write_only interval_respected command_applied_and_acked \
   undeclared_command_acked_not_ok dev_get_failure_sends_null config_rev_change_fetches_config \
   409_triggers_new_hello html_error_body_backoff_no_crash unreachable_server_backoff 401_sets_error_status \
   command_forces_reread command_with_new_config_rev_not_lost no_tight_loop_on_junk_200 409_always_not_tight \
-  token_with_quote_and_backslash_exact clock_jump_back_does_not_stall bad_clock_no_crash bad_config_exit_2 429_waits poll_wait_never_zero serial_only_with_opt_in crlf_config second_instance_is_not_this_task; do
+  token_with_quote_and_backslash_exact clock_jump_back_does_not_stall bad_clock_no_crash bad_config_exit_2 429_waits poll_wait_never_zero serial_only_with_opt_in crlf_config second_instance_is_not_this_task \
+  event_log_content event_log_failure_then_online event_log_unreachable_401_429_409 event_log_bounded \
+  display_inert_without_flag display_draws_coalesces_and_clears; do
   "test_$t"
 done
 check no_schema_errors sh -c "! grep -r -e '-ERROR' $T --include=log"

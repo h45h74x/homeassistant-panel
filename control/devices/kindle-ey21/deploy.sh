@@ -6,8 +6,8 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 DEST=/mnt/us/extensions/panel-control
 ARC=$(mktemp) || exit 1
 trap 'rm -f "$ARC"' EXIT
-# config is never shipped, so an existing one on the device is never overwritten
-tar cf "$ARC" --exclude=./config -C "$HERE/panel-control" . && tar tf "$ARC" | grep -q '^\./menu\.json$' \
+# config and display.on (device state) are never shipped, so existing ones on the device are never overwritten
+tar cf "$ARC" --exclude=./config --exclude=./display.on -C "$HERE/panel-control" . && tar tf "$ARC" | grep -q '^\./menu\.json$' \
   || { echo "local tar failed, nothing sent" >&2; exit 1; }
 $SSH -- "$HOST" "mkdir -p $DEST && tar xf - -C $DEST" < "$ARC" || { echo "deploy failed" >&2; exit 1; }
 echo "copied panel-control to $HOST:$DEST (config untouched)"

@@ -6,18 +6,33 @@ PANEL_TMP=${PANEL_TMP:-/tmp/panel-control.d}
 PANEL_CONFIG=${PANEL_CONFIG:-$BIN/../config}
 AGENT=${AGENT:-$BIN/agent.sh}
 EIPS_BIN=${EIPS:-/usr/sbin/eips}
-# Messages go on a fixed 5-row block of 60 columns: the first say blanks all rows, long text wraps,
-# overflow ends with "...". Must not be called in a command substitution (ROW would be lost).
+PANEL_LOG=${PANEL_LOG:-/tmp/panel-control.log}
+PANEL_DISPLAY_FLAG=${PANEL_DISPLAY_FLAG:-/mnt/us/extensions/panel-control/display.on}
+DEVICE_LAYER=${DEVICE_LAYER:-$BIN/ey21.sh}
+load_layer() { [ -r "$DEVICE_LAYER" ] && . "$DEVICE_LAYER"; }
+# Messages go on a fixed 5-row block: the first say blanks all rows, long text wraps, overflow ends with "...".
+# Primary: fbink on rows -10..-6 (46 columns, above the status display). Fallback without fbink: eips on the top
+# rows (60 columns). Must not be called in a command substitution (ROW would be lost).
+FBINK_BIN=
+for _f in "${FBINK:-}" /var/local/kmc/bin/fbink /mnt/us/libkh/bin/fbink; do
+  [ -n "$_f" ] && [ -x "$_f" ] && { FBINK_BIN=$_f; break; }
+done
 ROW=0; SAY_INIT=
-say_row() { "$EIPS_BIN" 0 "$1" "$(printf '%-60.60s' "$2")" >/dev/null 2>&1; }
+if [ -n "$FBINK_BIN" ]; then
+  SAY_W=46
+  say_row() { _t=$2; [ -n "$_t" ] || _t=' '; "$FBINK_BIN" -q -p -y $(($1-10)) "$_t" >/dev/null 2>&1; }
+else
+  SAY_W=60
+  say_row() { "$EIPS_BIN" 0 "$1" "$(printf '%-60.60s' "$2")" >/dev/null 2>&1; }
+fi
 say() {
   echo "$*"
   if [ -z "$SAY_INIT" ]; then SAY_INIT=1; _r=0; while [ $_r -lt 5 ]; do say_row $_r ''; _r=$((_r+1)); done; fi
   _m=$*
   while [ -n "$_m" ] && [ $ROW -lt 5 ]; do
-    if [ ${#_m} -le 60 ]; then say_row $ROW "$_m"; _m=
-    elif [ $ROW -eq 4 ]; then say_row $ROW "$(printf '%.57s...' "$_m")"; _m=
-    else say_row $ROW "$(printf '%.60s' "$_m")"; _m=$(printf '%s' "$_m" | cut -c61-)
+    if [ ${#_m} -le $SAY_W ]; then say_row $ROW "$_m"; _m=
+    elif [ $ROW -eq 4 ]; then say_row $ROW "$(printf "%.$((SAY_W-3))s..." "$_m")"; _m=
+    else say_row $ROW "$(printf "%.${SAY_W}s" "$_m")"; _m=$(printf '%s' "$_m" | cut -c$((SAY_W+1))-)
     fi
     ROW=$((ROW+1))
   done

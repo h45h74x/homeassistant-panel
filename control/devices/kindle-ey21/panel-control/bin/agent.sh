@@ -1,12 +1,17 @@
 #!/bin/sh
 # Panel Control agent (POSIX sh / BusyBox ash 1.17). Contract: control/contract/README.md.
-# Env: PANEL_CONFIG PANEL_STATUS PANEL_TMP DEVICE_LAYER PANEL_BACKOFF_BASE PANEL_LOCKOUT_WAIT PANEL_AUTH_WAIT
+# Env: PANEL_PID PANEL_CONFIG PANEL_STATUS PANEL_LOG PANEL_DISPLAY_FLAG PANEL_DISPLAY_MIN PANEL_TMP DEVICE_LAYER PANEL_BACKOFF_BASE PANEL_LOCKOUT_WAIT PANEL_AUTH_WAIT
 HERE=$(cd "$(dirname "$0")" && pwd)
 . "$HERE/lib.sh" || exit 2
 AGENT_VERSION=0.1.0
 PANEL_CONFIG=${PANEL_CONFIG:-/mnt/us/extensions/panel-control/config}
 PANEL_STATUS=${PANEL_STATUS:-/tmp/panel-control.status}
 PANEL_TMP=${PANEL_TMP:-/tmp/panel-control.d}
+PANEL_LOG=${PANEL_LOG:-/tmp/panel-control.log}
+PANEL_DISPLAY_FLAG=${PANEL_DISPLAY_FLAG:-/mnt/us/extensions/panel-control/display.on}
+DISP_MIN=${PANEL_DISPLAY_MIN:-20}
+# The agent records its OWN pid: on BusyBox `sh agent.sh &` leaves $! pointing at a forked wrapper, not the agent.
+[ -n "${PANEL_PID:-}" ] && printf '%s\n' "$$" > "$PANEL_PID"
 DEVICE_LAYER=${DEVICE_LAYER:-$HERE/ey21.sh}
 BO_BASE=${PANEL_BACKOFF_BASE:-5}
 LOCKOUT_WAIT=${PANEL_LOCKOUT_WAIT:-300}
@@ -25,6 +30,17 @@ agent_version=$AGENT_VERSION"
     ST_WRITTEN=$_s; ST_WLC=${LAST_CONTACT:-0}
   fi
 }
+# ---- event log in RAM: "HH:MM:SS message", never secrets; bounded (over 60 lines keeps the last 40)
+plog() {
+  _lm=$(printf '%s' "$1" | sed 's/[[:cntrl:]]//g' | cut -c1-80)
+  printf '%s %s\n' "$(date +%H:%M:%S)" "$_lm" >> "$PANEL_LOG" 2>/dev/null || return 0
+  if [ "$(wc -l < "$PANEL_LOG" 2>/dev/null)" -gt 60 ] 2>/dev/null; then
+    tail -n 40 "$PANEL_LOG" > "$PANEL_LOG.tmp" 2>/dev/null && mv "$PANEL_LOG.tmp" "$PANEL_LOG" 2>/dev/null
+  fi
+  return 0
+}
+LASTFAIL=
+flog() { [ "$1" = "$LASTFAIL" ] || { LASTFAIL=$1; plog "$1"; }; }   # a failure streak logs once per distinct message
 die() { set_status error "$1"; exit 2; }
 
 load_config "$PANEL_CONFIG" > "$PANEL_STATUS.err" 2>&1; _rc=$?   # not in $(): it sets CFG_* globals
@@ -63,16 +79,19 @@ http_call() { # <method> <path> [body-file]
 BO=$BO_BASE; NEED_HELLO=1; B409=1; APPLIED=0
 chk() {
   case "$HTTP_CODE" in
-    200) BO=$BO_BASE; LAST_CONTACT=$(date +%s); set_status running ""; return 0 ;;
-    409) NEED_HELLO=1; sleep "$B409"; B409=$((B409*2)); [ $B409 -le 120 ] || B409=120; return 1 ;;
-    401) set_status error "unauthorized (check token)"; sleep "$AUTH_WAIT"; return 1 ;;
-    429) set_status backoff "locked out"; sleep "$LOCKOUT_WAIT"; return 1 ;;
+    200) BO=$BO_BASE; _d=$(date '+%s %H:%M:%S'); LAST_CONTACT=${_d% *}; CONTACT_HMS=${_d#* }
+         [ -z "$LASTFAIL" ] || { LASTFAIL=; plog online; }
+         set_status running ""; return 0 ;;
+    409) plog "409 re-hello"; NEED_HELLO=1; sleep "$B409"; B409=$((B409*2)); [ $B409 -le 120 ] || B409=120; return 1 ;;
+    401) flog "unauthorized (check token)"; set_status error "unauthorized (check token)"; sleep "$AUTH_WAIT"; return 1 ;;
+    429) flog "locked out, wait ${LOCKOUT_WAIT}s"; set_status backoff "locked out"; sleep "$LOCKOUT_WAIT"; return 1 ;;
     000) fail_soft "curl error $CURL_RC" ;;
     *) fail_soft "http $HTTP_CODE" ;;
   esac
   return 1
 }
 fail_soft() { # <reason>: backoff, doubling to 120 s
+  case "$1" in "curl error"*) flog "HA unreachable, retry in ${BO}s" ;; *) flog "$1, retry in ${BO}s" ;; esac
   set_status backoff "$1"; sleep "$BO"; BO=$((BO*2)); [ $BO -le 120 ] || BO=120
 }
 
@@ -152,6 +171,7 @@ do_hello() {
     fail_soft "bad hello response"; return 1
   fi
   HB=$_h; PW=$_p; NEED_HELLO=0; LAST_STATE=0
+  set -- $CAPS; plog "hello ok ($# caps)"
   reset_last
   return 0
 }
@@ -161,7 +181,9 @@ check_rev() {
   _r=$(json_int config_rev "$1")
   if [ -n "$_r" ] && [ "$_r" != "$CFG_REV" ]; then
     http_call GET config
-    if chk; then apply_config "$HTTP_BODY" && reset_last; fi
+    if chk; then
+      if apply_config "$HTTP_BODY"; then reset_last; set -- $ENABLED; plog "config rev applied ($# enabled)"; fi
+    fi
   fi
 }
 
@@ -219,8 +241,8 @@ apply_commands() { # <commands body>
         _err=${_msg:-set failed}
       fi
     fi
-    if [ -z "$_err" ]; then ACKS="$ACKS{\"id\":\"$_cid\",\"ok\":true},"
-    else ACKS="$ACKS{\"id\":\"$_cid\",\"ok\":false,\"error\":$(json_str "$_err")},"; fi
+    if [ -z "$_err" ]; then plog "cmd $_cap ok"; ACKS="$ACKS{\"id\":\"$_cid\",\"ok\":true},"
+    else plog "cmd $_cap FAILED: $_err"; ACKS="$ACKS{\"id\":\"$_cid\",\"ok\":false,\"error\":$(json_str "$_err")},"; fi
   done <<EOF
 $_cmds
 EOF
@@ -242,10 +264,33 @@ poll_commands() {
   fi
 }
 
+# ---- on-screen status: only when the layer has dev_display AND the flag file exists. Redraw only when
+# state or the last two log lines changed and at least DISP_MIN s passed; the clock is refreshed only on a redraw.
+CONTACT_HMS=; DISP_ON=0; DISP_SIG=; DISP_LAST=0
+if type dev_display >/dev/null 2>&1; then HAVE_DISP=1; else HAVE_DISP=0; fi
+display_tick() {
+  [ $HAVE_DISP = 1 ] || return 0
+  if [ ! -f "$PANEL_DISPLAY_FLAG" ]; then
+    [ $DISP_ON = 0 ] || { DISP_ON=0; DISP_SIG=; dev_display_clear >/dev/null 2>&1; }
+    return 0
+  fi
+  DISP_ON=1
+  log_last2
+  _sig="$ST_STATE|$LOG1|$LOG2"
+  [ "$_sig" != "$DISP_SIG" ] || return 0
+  _dn=$(date +%s)
+  if [ "$_dn" -ge "$DISP_LAST" ] 2>/dev/null && [ $((_dn-DISP_LAST)) -lt "$DISP_MIN" ]; then return 0; fi
+  DISP_SIG=$_sig; DISP_LAST=$_dn
+  dev_display "Panel Control: $ST_STATE ${CONTACT_HMS:-no contact yet}" "$LOG1" "$LOG2" >/dev/null 2>&1
+  return 0
+}
+
 read_caps
 set_status backoff "starting"
+plog started
 PREV_NOW=0
 while :; do
+  display_tick
   _now=$(date +%s)
   case "$_now" in ''|*[!0-9]*) fail_soft "bad clock"; continue ;; esac
   # clock set backwards (Kindle syncs time after Wi-Fi): restart heartbeat and interval timers

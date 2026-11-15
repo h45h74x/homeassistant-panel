@@ -14,13 +14,22 @@ begin() { # <name> [good-config]
   # fake agent: writes a status file, then sleeps with a child
   cat > "$D/bin/agent.sh" <<EOT
 #!/bin/sh
+echo \$\$ > "\$PANEL_PID"
 mkdir -p "\$PANEL_TMP"; echo secret > "\$PANEL_TMP/curl.cfg"
 printf 'state=running\nlast_contact=%s\nlast_error=\nagent_version=t\n' "\$(date +%s)" > "\$PANEL_STATUS"
 while :; do sleep 1; done
 EOT
+  unset FBINK; : > "$D/fbink.log"
+  export PANEL_LOG="$D/panel.log" PANEL_DISPLAY_FLAG="$D/display.on"
   export PANEL_PID="$D/pid" PANEL_STATUS="$D/status" PANEL_TMP="$D/tmp" PANEL_CONFIG="$D/config" EIPS="$D/eips" AGENT="$D/bin/agent.sh"
   [ "$2" = nocfg ] || printf 'url = http://10.0.0.1:8123/api/x\r\ntoken = "abc123"\r\ndevice_name = Kit\r\n' > "$D/config"
 }
+fbstub() { # recording fbink stub for the primary path: one line per call, each argv in [ ]
+  printf '#!/bin/sh\nfor a in "$@"; do printf "[%%s]" "$a"; done >> "%s"\necho >> "%s"\n' "$D/fbink.log" "$D/fbink.log" > "$D/fbink"
+  chmod +x "$D/fbink"; export FBINK="$D/fbink"; }
+fbhas() { grep -F -q -e "$1" "$D/fbink.log"; }
+fbtext() { sed 's/^\[-q\]\[-p\]\[-y\]\[-*[0-9]*\]\[//; s/\]$//'; }
+fbrow() { grep -F "[-y][$1][" "$D/fbink.log" | tail -n 1 | fbtext; }
 alive() { kill -0 "$(cat "$PANEL_PID" 2>/dev/null)" 2>/dev/null; }
 nagents() { pgrep -f "$D/bin/agent.sh" | wc -l; }
 eq() { [ "$1" = "$2" ]; }
@@ -163,6 +172,7 @@ cat > "$D/bin/agent.sh" <<'EOT'
 sleep 4242 &
 sh -c 'sleep 4243 & wait' &
 sh -c 'sh -c "sleep 4244" & wait' &
+echo $$ > "$PANEL_PID"
 mkdir -p "$PANEL_TMP"; printf 'state=running\nlast_contact=%s\n' "$(date +%s)" > "$PANEL_STATUS"
 while :; do sleep 1; done
 EOT
@@ -191,6 +201,119 @@ ok long_message_rows sh -c "tail -n 3 '$D/eips.log' | cut -c3 | tr -d ' \n' | gr
 msg=$(printf '0123456789%.0s' $(seq 1 40))
 sh -c '. "$1/launch-lib.sh"; say "$2"' sh "$BIN" "$msg" >/dev/null
 ok overflow_ends_with_dots sh -c "tail -n 1 '$D/eips.log' | sed 's/ *\$//' | grep -q '\.\.\.\$'"
+
+# ---- primary path: fbink on the bottom block (rows -10..-6), eips untouched
+begin f1; fbstub
+sh "$BIN/start.sh" >/dev/null
+ok fb_start_shows_state fbhas '[-q][-p][-y][-10][Panel Control started: running]'
+ok fb_first_say_blanks_five_rows eq "$(head -n 5 "$D/fbink.log" | tr -d '\n')" '[-q][-p][-y][-10][ ][-q][-p][-y][-9][ ][-q][-p][-y][-8][ ][-q][-p][-y][-7][ ][-q][-p][-y][-6][ ]'
+ok fb_no_eips_when_fbink_present test ! -s "$D/eips.log"
+ok fb_every_call_quiet_padded sh -c "! grep -v -F '[-q][-p][-y][-' '$D/fbink.log' | grep -q ."
+sh "$BIN/start.sh" >/dev/null
+ok fb_second_start_says_already_running fbhas 'already running'
+sh "$BIN/status.sh" >/dev/null
+ok fb_status_prints_state_and_last_contact sh -c "grep -q 'state=running' '$D/fbink.log' && grep -q 'last contact [0-9]* s ago' '$D/fbink.log'"
+ok fb_status_not_stale sh -c "! grep -q STALE '$D/fbink.log'"
+printf 'state=running\nlast_contact=%s\nlast_error=boom\n' "$(( $(date +%s) - 500 ))" > "$PANEL_STATUS"
+sh "$BIN/status.sh" >/dev/null
+ok fb_status_stale fbhas 'STALE'
+ok fb_status_error_text fbhas 'error: boom'
+sh "$BIN/stop.sh" >/dev/null
+ok fb_stop_says_stopped fbhas 'Panel Control stopped'
+for r in -9 -8 -7 -6; do ok "fb_row_${r}_blank_after_stop" eq "$(fbrow $r)" ' '; done
+ok fb_no_eips_after_stop test ! -s "$D/eips.log"
+
+begin f2 nocfg; fbstub
+sh "$BIN/start.sh" >/dev/null; rc=$?
+ok fb_no_config_rc eq $rc 1
+ok fb_no_config_message fbhas 'config.sample'
+begin f3; fbstub
+sh "$BIN/show-config.sh" >/dev/null
+ok fb_show_config_plain_text sh -c "grep -q 'url=http://10.0.0.1:8123/api/x' '$D/fbink.log' && grep -q 'token=abc123' '$D/fbink.log' && grep -q 'name=Kit' '$D/fbink.log'"
+
+begin f4; fbstub
+msg=$(printf '0123456789%.0s' 1 2 3 4 5 6 7 8 9 10 11 12 13)
+sh -c '. "$1/launch-lib.sh"; say "$2"' sh "$BIN" "$msg" >/dev/null
+got=$(tail -n 3 "$D/fbink.log" | fbtext | tr -d '\n')
+ok fb_long_message_wraps_no_loss eq "$got" "$msg"
+ok fb_long_message_rows eq "$(tail -n 3 "$D/fbink.log" | sed -n 's/.*\[-y\]\[\(-[0-9]*\)\].*/\1/p' | tr -d '\n')" '-10-9-8'
+ok fb_wrap_width_46 eq "$(fbrow -10 | wc -c | tr -d ' ')" 47
+begin f5; fbstub
+msg=$(printf '0123456789%.0s' $(seq 1 40))
+sh -c '. "$1/launch-lib.sh"; say "$2"' sh "$BIN" "$msg" >/dev/null
+ok fb_overflow_ends_with_dots eq "$(fbrow -6 | sed 's/.*\(...\)$/\1/')" '...'
+ok fb_overflow_fits_row eq "$(fbrow -6 | wc -c | tr -d ' ')" 47
+ok fb_overflow_stays_in_block sh -c "! grep -F -q -e '[-y][-5][' -e '[-y][-11][' '$D/fbink.log'"
+begin f6; fbstub
+sh -c '. "$1/launch-lib.sh"; say "$2"' sh "$BIN" '%s %d \n %%' >/dev/null
+ok fb_format_string_safe fbhas '[-y][-10][%s %d \n %%]'
+
+# ---- display toggle scripts and stop/start interplay (real device layer + fbink stub)
+begin d1; fbstub
+rm -f "$PANEL_STATUS"
+sh "$BIN/display-on.sh" > "$D/out" 2>&1; rc=$?
+ok on_rc eq $rc 0
+ok on_creates_flag test -f "$PANEL_DISPLAY_FLAG"
+ok on_silent test ! -s "$D/out"
+ok on_not_running_line fbhas '[-q][-p][-y][-3][Panel Control: not running]'
+: > "$D/fbink.log"
+printf '10:00:01 started\n10:00:02 hello ok (23 caps)\n10:00:03 cmd brightness ok\n' > "$PANEL_LOG"
+printf 'state=running\nlast_contact=1\nlast_error=\n' > "$PANEL_STATUS"
+sh "$BIN/display-on.sh" >/dev/null
+ok on_state_and_last_two_log_lines eq "$(cat "$D/fbink.log")" '[-q][-p][-y][-3][Panel Control: running]
+[-q][-p][-y][-2][10:00:02 hello ok (23 caps)]
+[-q][-p][-y][-1][10:00:03 cmd brightness ok]'
+: > "$D/fbink.log"
+printf '10:00:01 started\n' > "$PANEL_LOG"
+sh "$BIN/display-on.sh" >/dev/null
+ok on_single_log_line eq "$(sed -n 2,3p "$D/fbink.log" | tr -d '\n')" '[-q][-p][-y][-2][ ][-q][-p][-y][-1][10:00:01 started]'
+: > "$D/fbink.log"
+sh "$BIN/display-off.sh" > "$D/out" 2>&1; rc=$?
+ok off_rc eq $rc 0
+ok off_removes_flag test ! -e "$PANEL_DISPLAY_FLAG"
+ok off_silent test ! -s "$D/out"
+ok off_clears_three_rows eq "$(cat "$D/fbink.log")" '[-q][-p][-y][-3][ ]
+[-q][-p][-y][-2][ ]
+[-q][-p][-y][-1][ ]'
+begin d2   # no fbink anywhere: still silent, flag still managed
+sh "$BIN/display-on.sh" > "$D/out" 2>&1; rc=$?
+ok on_nofbink_silent_rc0 sh -c "[ $rc = 0 ] && [ ! -s '$D/out' ] && [ -f '$PANEL_DISPLAY_FLAG' ]"
+sh "$BIN/display-off.sh" > "$D/out" 2>&1; rc=$?
+ok off_nofbink_silent_rc0 sh -c "[ $rc = 0 ] && [ ! -s '$D/out' ] && [ ! -e '$PANEL_DISPLAY_FLAG' ]"
+
+begin d3; fbstub
+sh "$BIN/start.sh" >/dev/null
+printf '10:00:01 started\n' > "$PANEL_LOG"; : > "$PANEL_DISPLAY_FLAG"; : > "$D/fbink.log"
+sh "$BIN/stop.sh" >/dev/null
+ok stop_draws_stopped_when_flag eq "$(grep -F -e '[-y][-3][' -e '[-y][-2][' -e '[-y][-1][' "$D/fbink.log" | tr -d '\n')" '[-q][-p][-y][-3][Panel Control: stopped][-q][-p][-y][-2][ ][-q][-p][-y][-1][ ]'
+ok stop_removes_log test ! -e "$PANEL_LOG"
+ok stop_keeps_flag test -f "$PANEL_DISPLAY_FLAG"
+begin d4; fbstub
+sh "$BIN/start.sh" >/dev/null; : > "$D/fbink.log"
+sh "$BIN/stop.sh" >/dev/null
+ok stop_without_flag_no_display_rows sh -c "! grep -F -q -e '[-y][-3][' -e '[-y][-2][' -e '[-y][-1][' '$D/fbink.log'"
+begin d5
+printf 'old\n' > "$PANEL_LOG"
+sh "$BIN/start.sh" >/dev/null
+ok start_wipes_log test ! -e "$PANEL_LOG"
+ok start_exports_log_path sh -c "grep -q . '$PANEL_PID'"
+sh "$BIN/stop.sh" >/dev/null
+
+# deploy never ships display.on (device state)
+begin d6
+mkdir -p "$D/dev/dest"; cp "$T/t9/ssh" "$D/ssh"; sed -i "s|$T/t9|$D|g" "$D/ssh"
+: > "$PKG/display.on"
+SSH="$D/ssh" sh "$here/../deploy.sh" devhost >/dev/null 2>&1
+rm -f "$PKG/display.on"
+ok deploy_copies_files_again test -f "$D/dev/dest/bin/display-on.sh" -a -f "$D/dev/dest/bin/display-off.sh"
+ok deploy_never_ships_display_flag test ! -e "$D/dev/dest/display.on"
+: > "$D/dev/dest/display.on"
+SSH="$D/ssh" sh "$here/../deploy.sh" devhost >/dev/null 2>&1
+ok deploy_keeps_device_display_flag test -f "$D/dev/dest/display.on"
+
+ok menu_order eq "$(python3 -c "
+import json,sys
+print('|'.join(x['name']+'='+x['action'] for x in sorted(json.load(open(sys.argv[1]))['items'][0]['items'],key=lambda x:x['priority'])))" "$PKG/menu.json")" 'Start=bin/start.sh|Stop=bin/stop.sh|Status=bin/status.sh|Status on screen: ON=bin/display-on.sh|Status on screen: OFF=bin/display-off.sh|Show config=bin/show-config.sh'
 
 # menu.json / config.xml sanity
 ok menu_json_valid python3 -m json.tool "$PKG/menu.json"

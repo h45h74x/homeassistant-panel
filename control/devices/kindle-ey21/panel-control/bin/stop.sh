@@ -26,5 +26,8 @@ if [ -n "$pid" ]; then
 else
   say "Panel Control not running"
 fi
-rm -rf "$PANEL_PID" "$PANEL_TMP" "$PANEL_STATUS" "$PANEL_STATUS.tmp"
+if [ -f "$PANEL_DISPLAY_FLAG" ] && load_layer && type dev_display >/dev/null 2>&1; then
+  dev_display "Panel Control: stopped" ' ' ' ' >/dev/null 2>&1
+fi
+rm -rf "$PANEL_PID" "$PANEL_TMP" "$PANEL_STATUS" "$PANEL_STATUS.tmp" "$PANEL_LOG" "$PANEL_LOG.tmp"
 exit 0

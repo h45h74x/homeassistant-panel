@@ -75,3 +75,12 @@ EOF
   [ -n "$CFG_TOKEN" ] || { echo "config: token missing"; return 1; }
   return 0
 }
+
+# log_last2: sets LOG1 (older) and LOG2 (newest) from $PANEL_LOG, empty when missing
+log_last2() {
+  LOG1=; LOG2=
+  [ -f "$PANEL_LOG" ] || return 0
+  LOG2=$(tail -n 1 "$PANEL_LOG" 2>/dev/null)
+  [ "$(wc -l < "$PANEL_LOG" 2>/dev/null)" -ge 2 ] 2>/dev/null && LOG1=$(tail -n 2 "$PANEL_LOG" 2>/dev/null | head -n 1)
+  return 0
+}

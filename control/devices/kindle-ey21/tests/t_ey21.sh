@@ -111,11 +111,47 @@ test_sensitive_values_not_in_stderr() {
   fx; _e=$( { for id in ip_address ssid mac_address; do dev_get $id; done; dev_identity; } 2>&1 >/dev/null ); ok stderr_empty "" "$_e"
 }
 
+fbstub() { # recording fbink stub: one line per call, each argv in [ ]
+  printf '#!/bin/sh\nfor a in "$@"; do printf "[%%s]" "$a"; done >> "%s"\necho >> "%s"\n' "$T/fb.log" "$T/fb.log" > "$T/fbink"
+  chmod +x "$T/fbink"; : > "$T/fb.log"; FBINK="$T/fbink"; export FBINK; }
+test_display_draws_bottom_three_rows() {
+  fx; fbstub; dev_display "one" "two" "three"; rc=$?
+  ok disp_rc 0 "$rc"
+  ok disp_calls "[-q][-p][-y][-3][one]
+[-q][-p][-y][-2][two]
+[-q][-p][-y][-1][three]" "$(cat "$T/fb.log")"
+}
+test_display_sanitizes_lines() {
+  fx; fbstub
+  dev_display "$(printf 'a\001b\tc\303\251d\033[1m')" "$(printf 'x\ny')" ""
+  ok disp_strip "[-q][-p][-y][-3][abcd[1m]
+[-q][-p][-y][-2][x y]
+[-q][-p][-y][-1][ ]" "$(cat "$T/fb.log")"
+  : > "$T/fb.log"; _l=$(printf 'abcdefghij%.0s' 1 2 3 4 5 6)
+  dev_display "$_l" a b
+  ok disp_trunc46 "[-q][-p][-y][-3][$(printf '%s' "$_l" | cut -c1-46)]" "$(sed -n 1p "$T/fb.log")"
+}
+test_display_clear_blanks_three_rows() {
+  fx; fbstub; dev_display_clear
+  ok disp_clear "[-q][-p][-y][-3][ ]
+[-q][-p][-y][-2][ ]
+[-q][-p][-y][-1][ ]" "$(cat "$T/fb.log")"
+}
+test_display_without_fbink_is_silent() {
+  fx; FBINK="$T/none"; export FBINK
+  ok disp_nofb_out "" "$(dev_display a b c 2>&1)"
+  no_ disp_nofb_rc dev_display a b c
+  ok disp_clear_nofb_out "" "$(dev_display_clear 2>&1)"
+  no_ disp_clear_nofb_rc dev_display_clear
+  unset FBINK
+}
+
 for t in brightness_get_rounds brightness_set battery_and_charging power_state_mapping frontlight_on keep_awake_get_set refresh_screen_set \
   cpu_load memory_free_bytes memory_total_bytes storage_bytes_from_df rootfs_used_percent uptime battery_voltage_volts battery_current_ma \
   wifi_signal_percent kernel_version ip_and_mac_parse cpu_usage_first_null_then_percent unknown_id_returns_1 \
   capabilities_exclude_warmth_and_battery_temperature capabilities_flags identity_model_and_version serial_only_when_opted_in \
-  refuses_non_ey21 missing_files_return_1 sensitive_values_not_in_stderr; do "test_$t"; done
+  refuses_non_ey21 missing_files_return_1 sensitive_values_not_in_stderr \
+  display_draws_bottom_three_rows display_sanitizes_lines display_clear_blanks_three_rows display_without_fbink_is_silent; do "test_$t"; done
 
 # ---- integration: real agent.sh + real ey21.sh + stubs against mock_ha.py
 fx

@@ -11,10 +11,11 @@ trap 'rmdir "$LOCK" 2>/dev/null' EXIT
 pid=$(agent_pid) && { say "Panel Control already running (pid $pid)"; exit 0; }
 . "$BIN/lib.sh"
 why=$(load_config "$PANEL_CONFIG") || { say "Not started: $why"; say "Create config from config.sample"; exit 1; }
-rm -rf "$PANEL_TMP" "$PANEL_STATUS" "$PANEL_PID"
-PANEL_CONFIG=$PANEL_CONFIG PANEL_STATUS=$PANEL_STATUS PANEL_TMP=$PANEL_TMP sh "$AGENT" >/dev/null 2>&1 &
-echo $! > "$PANEL_PID"
+rm -rf "$PANEL_TMP" "$PANEL_STATUS" "$PANEL_PID" "$PANEL_LOG"
+# the agent writes its own pid to $PANEL_PID: on BusyBox `sh agent.sh &` makes $! a forked wrapper, not the agent
+export PANEL_PID PANEL_CONFIG PANEL_STATUS PANEL_TMP PANEL_LOG
+sh "$AGENT" >/dev/null 2>&1 &
 _i=0
-while [ ! -s "$PANEL_STATUS" ] && [ $_i -lt 3 ]; do sleep 1; _i=$((_i+1)); done
+while { [ ! -s "$PANEL_STATUS" ] || [ ! -s "$PANEL_PID" ]; } && [ $_i -lt 3 ]; do sleep 1; _i=$((_i+1)); done
 st=$(sed -n 's/^state=//p' "$PANEL_STATUS" 2>/dev/null)
 say "Panel Control started: ${st:-no status yet}"

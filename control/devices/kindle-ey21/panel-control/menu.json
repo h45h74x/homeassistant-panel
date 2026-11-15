@@ -7,7 +7,9 @@
 				{"name": "Start", "priority": 1, "action": "bin/start.sh", "exitmenu": false},
 				{"name": "Stop", "priority": 2, "action": "bin/stop.sh", "exitmenu": false},
 				{"name": "Status", "priority": 3, "action": "bin/status.sh", "exitmenu": false},
-				{"name": "Show config", "priority": 4, "action": "bin/show-config.sh", "exitmenu": false}
+				{"name": "Status on screen: ON", "priority": 4, "action": "bin/display-on.sh", "exitmenu": false},
+				{"name": "Status on screen: OFF", "priority": 5, "action": "bin/display-off.sh", "exitmenu": false},
+				{"name": "Show config", "priority": 6, "action": "bin/show-config.sh", "exitmenu": false}
 			]
 		}
 	]

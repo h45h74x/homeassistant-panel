@@ -1,5 +1,5 @@
 # EY21 (Kindle Paperwhite 1) device layer, sourced by agent.sh. Defines functions only.
-# Env for tests: PROC_ROOT SYS_ROOT ETC_ROOT EIPS; lipc/df/ifconfig/uname/hostname come from PATH.
+# Env for tests: PROC_ROOT SYS_ROOT ETC_ROOT EIPS FBINK; lipc/df/ifconfig/uname/hostname come from PATH.
 # BusyBox 1.17 ash: no [[ ]], no arrays, basic sed only.
 
 _proc() { printf '%s' "${PROC_ROOT:-/proc}"; }
@@ -79,7 +79,7 @@ dev_get() {
       _v=$(_file1 "$(_proc)/loadavg") || return 1; _v=${_v%% *}; _isnum "$_v" || return 1; printf '%s' "$_v" ;;
     cpu_usage)
       [ -r "$(_proc)/stat" ] || return 1
-      _cur=$(head -n 1 "$(_proc)/stat" | awk '{t=0; for(i=2;i<=8;i++) t+=$i; print t, $5+$6}')
+      _cur=$(head -n 1 "$(_proc)/stat" | awk '{t=0; for(i=2;i<=8;i++) t+=$i; printf "%.0f %.0f", t, $5+$6}')  # BusyBox awk print uses %.6g for sums > 1e6 (verified on the EY21), so printf
       [ -n "$_cur" ] || return 1
       _f="${PANEL_TMP:-/tmp}/ey21.cpu"; _prev=$(cat "$_f" 2>/dev/null)
       printf '%s\n' "$_cur" > "$_f" 2>/dev/null
@@ -132,3 +132,25 @@ dev_set() {
     *) echo "unsupported"; return 1 ;;
   esac
 }
+
+# ---- on-screen status block: the bottom three rows via FBINK (47 columns, rows -3..-1). Silent, returns 1 without fbink.
+_fbink() { # prints the first executable fbink
+  for _f in "${FBINK:-}" /var/local/kmc/bin/fbink /mnt/us/libkh/bin/fbink; do
+    [ -n "$_f" ] && [ -x "$_f" ] && { printf '%s' "$_f"; return 0; }
+  done
+  return 1
+}
+_dline() { # printable ASCII only, one line, max 46 chars, never empty
+  _o=$(printf '%s' "$1" | tr '\n' ' ' | sed 's/[[:cntrl:]]//g' | LC_ALL=C sed 's/[^ -~]//g' | cut -c1-46)
+  printf '%s' "${_o:- }"
+}
+dev_display() { # <line1> <line2> <line3>
+  _fb=$(_fbink) || return 1
+  _y=-3
+  for _t in "$1" "$2" "$3"; do
+    "$_fb" -q -p -y "$_y" "$(_dline "$_t")" >/dev/null 2>&1
+    _y=$((_y+1))
+  done
+  return 0
+}
+dev_display_clear() { dev_display ' ' ' ' ' '; }

@@ -22,3 +22,5 @@ dev_set() {
     *) echo "unsupported"; return 1 ;;
   esac
 }
+dev_display() { printf 'DRAW %s|%s|%s\n' "$1" "$2" "$3" >> "$FAKE_DIR/disp.log"; }
+dev_display_clear() { echo CLEAR >> "$FAKE_DIR/disp.log"; }
