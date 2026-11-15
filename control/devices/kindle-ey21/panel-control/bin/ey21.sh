@@ -129,7 +129,9 @@ dev_set() {
       case "$2" in true) _v=1 ;; false) _v=0 ;; *) echo "keep_awake needs true/false"; return 1 ;; esac
       lipc-set-prop com.lab126.powerd preventScreenSaver "$_v" >/dev/null 2>&1 || { echo "lipc write failed"; return 1; } ;;
     refresh_screen) "$(_eips)" -c >/dev/null 2>&1 || { echo "eips failed"; return 1; } ;;
-    sleep) lipc-set-prop com.lab126.powerd powerButton 1 >/dev/null 2>&1 || { echo "lipc write failed"; return 1; } ;; # same path as the power button
+    sleep) # keep-awake blocks the lock, so clear it first; then the power button path
+      lipc-set-prop com.lab126.powerd preventScreenSaver 0 >/dev/null 2>&1 || { echo "lipc write failed"; return 1; }
+      lipc-set-prop com.lab126.powerd powerButton 1 >/dev/null 2>&1 || { echo "lipc write failed"; return 1; } ;;
     *) echo "unsupported"; return 1 ;;
   esac
 }

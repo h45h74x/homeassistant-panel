@@ -46,9 +46,15 @@ lipc-set-prop com.lab126.powerd preventScreenSaver 0" "$(cat "$STUB_LOG")"
 }
 test_refresh_screen_set() { fx; dev_set refresh_screen press >/dev/null; ok eips "eips -c" "$(cat "$STUB_LOG")"; no_ refresh_read dev_get refresh_screen; }
 test_sleep_set() {
-  fx; dev_set sleep press >/dev/null; ok sleep_lock "lipc-set-prop com.lab126.powerd powerButton 1" "$(cat "$STUB_LOG")"; no_ sleep_read dev_get sleep
-  fx; printf '#!/bin/sh\nexit 1\n' > "$T/failbin"; chmod +x "$T/failbin"; mkdir "$T/failp"; cp "$T/failbin" "$T/failp/lipc-set-prop"
-  PATH="$T/failp:$PATH"; _m=$(dev_set sleep press); _rc=$?; yes_ sleep_fail_rc test $_rc -ne 0; yes_ sleep_fail_reason test -n "$_m"
+  fx; dev_set sleep press >/dev/null; ok sleep_lock "lipc-set-prop com.lab126.powerd preventScreenSaver 0
+lipc-set-prop com.lab126.powerd powerButton 1" "$(cat "$STUB_LOG")"; no_ sleep_read dev_get sleep
+  # failing stub: logs, then fails when the args contain $FAIL_ON
+  mkdir -p "$T/failp"; printf '#!/bin/sh\necho "lipc-set-prop $*" >> "$STUB_LOG"\ncase "$*" in *"$FAIL_ON"*) exit 1 ;; esac\n' > "$T/failp/lipc-set-prop"; chmod +x "$T/failp/lipc-set-prop"
+  fx; PATH="$T/failp:$PATH"; FAIL_ON=preventScreenSaver; export FAIL_ON; _m=$(dev_set sleep press); _rc=$?
+  yes_ sleep_fail1_rc test $_rc -ne 0; yes_ sleep_fail1_reason test -n "$_m"
+  ok sleep_fail1_nolock "lipc-set-prop com.lab126.powerd preventScreenSaver 0" "$(cat "$STUB_LOG")"
+  fx; PATH="$T/failp:$PATH"; FAIL_ON=powerButton; export FAIL_ON; _m=$(dev_set sleep press); _rc=$?
+  yes_ sleep_fail2_rc test $_rc -ne 0; yes_ sleep_fail2_reason test -n "$_m"; unset FAIL_ON
 }
 test_cpu_load() { fx; ok load 0.38 "$(get cpu_load)"; }
 test_memory_free_bytes() { fx; ok memfree $(( (12712+25196+82140)*1024 )) "$(get memory_free)"; }
