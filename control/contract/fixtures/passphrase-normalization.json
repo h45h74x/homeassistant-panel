@@ -1,0 +1,11 @@
+[
+  {"input": "maple-orbit-tiger-quilt-ember", "normalized": "maple-orbit-tiger-quilt-ember"},
+  {"input": " Maple Orbit-TIGER quilt  ember ", "normalized": "maple-orbit-tiger-quilt-ember"},
+  {"input": "MAPLE-ORBIT-TIGER-QUILT-EMBER", "normalized": "maple-orbit-tiger-quilt-ember"},
+  {"input": "maple  orbit   tiger quilt ember", "normalized": "maple-orbit-tiger-quilt-ember"},
+  {"input": "maple\torbit\ttiger\tquilt\tember", "normalized": "maple-orbit-tiger-quilt-ember"},
+  {"input": "maple-orbit-tiger-quilt-ember\n", "normalized": "maple-orbit-tiger-quilt-ember"},
+  {"input": "maple orbit tiger quilt ember", "normalized": "maple-orbit-tiger-quilt-ember"},
+  {"input": "maple - orbit -tiger- quilt - ember", "normalized": "maple-orbit-tiger-quilt-ember"},
+  {"input": "\r\n  Maple-Orbit Tiger-Quilt Ember\t", "normalized": "maple-orbit-tiger-quilt-ember"}
+]
