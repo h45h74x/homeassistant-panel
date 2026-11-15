@@ -1,0 +1,200 @@
+#!/bin/sh
+# Agent loop against mock_ha.py. Needs python3 with jsonschema (PATH=control/.venv/bin:$PATH).
+here=$(cd "$(dirname "$0")" && pwd)
+AGENT="$here/../panel-control/bin/agent.sh"
+T=$(mktemp -d); MOCK_PID=; AGENT_PID=
+FAILS=0; N=0
+cleanup() { [ -n "$MOCK_PID" ] && kill "$MOCK_PID" 2>/dev/null; [ -n "$AGENT_PID" ] && kill "$AGENT_PID" 2>/dev/null; rm -rf "$T"; }
+trap cleanup EXIT
+check() { N=$((N+1)); _n=$1; shift; if ! "$@" >/dev/null 2>&1; then FAILS=$((FAILS+1)); echo "FAIL $_n"; [ -f "$LOG" ] && sed 's/^/    log: /' "$LOG" | head -20; fi; }
+cnt() { grep -c -e "$1" "$LOG" 2>/dev/null || true; }
+has() { grep -q -e "$1" "$LOG"; }
+hasnt() { ! grep -q -e "$1" "$LOG"; }
+ge() { [ "$1" -ge "$2" ]; }
+eq() { [ "$1" = "$2" ]; }
+statusHas() { grep -q -e "$1" "$STATUS"; }
+wait_for() { # <grep pattern in $LOG> <secs>
+  _i=0; while [ $_i -lt $(($2*10)) ]; do grep -q -e "$1" "$LOG" 2>/dev/null && return 0; sleep 0.1; _i=$((_i+1)); done; return 1; }
+wait_status() { _i=0; while [ $_i -lt $(($2*10)) ]; do grep -q -e "$1" "$STATUS" 2>/dev/null && return 0; sleep 0.1; _i=$((_i+1)); done; return 1; }
+
+# pieces for scenarios
+H() { printf '{"contract":1,"heartbeat_s":2,"poll_wait_s":1,"config":{"config_rev":%s,"enabled":[%s],"interval_s":{%s}}}' "$1" "$2" "$3"; }
+OKSTATE='{"status":200,"body":{"config_rev":1}}'
+NOCMD='{"status":200,"body":{"config_rev":1,"commands":[]}}'
+mk() { # <hello-entries> [state-entries] [commands-entries] [config-entries]
+  printf '{"hello":[%s],"state":[%s],"commands":[%s],"config":[%s]}' "$1" "${2:-$OKSTATE}" "${3:-$NOCMD}" "${4:-{\}}" > "$D/scen.json"; }
+helloE() { printf '{"status":200,"body":%s}' "$(H "$@")"; }
+
+begin() { # <name>: new case dir, exports env for the agent
+  D="$T/$1"; mkdir -p "$D/fake"; LOG="$D/log"; STATUS="$D/status"; : > "$LOG"
+  export FAKE_DIR="$D/fake" PANEL_STATUS="$STATUS" PANEL_TMP="$D/tmp" PANEL_CONFIG="$D/config" \
+    DEVICE_LAYER="$here/fake_device.sh" PANEL_BACKOFF_BASE=1 PANEL_LOCKOUT_WAIT=2 PANEL_AUTH_WAIT=30
+  unset FAKE_FAIL_GET
+}
+start_mock() {
+  python3 "$here/mock_ha.py" "$D/scen.json" "$D/port" "$LOG" >"$D/mock.out" 2>&1 & MOCK_PID=$!
+  _i=0; while [ ! -f "$D/port" ] && [ $_i -lt 50 ]; do sleep 0.1; _i=$((_i+1)); done
+  PORT=$(cat "$D/port")
+}
+write_cfg() { printf 'url = http://127.0.0.1:%s/api/panel_control/k/\ntoken = Maple-Orbit-Tiger-Quilt-Ember\n%s' "$PORT" "$1" > "$PANEL_CONFIG"; }
+start_agent() { sh "$AGENT" >"$D/agent.out" 2>&1 & AGENT_PID=$!; }
+stop_all() {
+  [ -n "$AGENT_PID" ] && kill "$AGENT_PID" 2>/dev/null; [ -n "$MOCK_PID" ] && kill "$MOCK_PID" 2>/dev/null
+  wait 2>/dev/null; AGENT_PID=; MOCK_PID=; }
+run() { start_mock; write_cfg "$1"; start_agent; }  # <extra config lines>
+alive() { kill -0 "$AGENT_PID" 2>/dev/null; }
+before() { # line number of first match
+  grep -n -e "$1" "$LOG" | head -n 1 | cut -d: -f1; }
+lt() { [ -n "$1" ] && [ -n "$2" ] && [ "$1" -lt "$2" ]; }
+
+test_hello_then_state() {
+  begin hello_state; mk "$(helloE 1 '"brightness"')"; run
+  wait_for '^POST .*/state ' 6
+  check hello_first eq "$(head -n 1 "$LOG" | cut -c1-4)" POST
+  check hello_path has '^POST /api/panel_control/k/hello auth=Bearer Maple-Orbit-Tiger-Quilt-Ember body='
+  check hello_before_state lt "$(before '/hello ')" "$(before '/state ')"
+  check status_running statusHas '^state=running'
+  check status_version statusHas '^agent_version=0.1.0'
+  check status_contact statusHas '^last_contact=[0-9]'
+  check commands_after_state has '^GET /api/panel_control/k/commands?wait='
+  stop_all
+}
+test_hello_body_has_catalog_ids_only_and_no_warmth() {
+  begin hello_body; mk "$(helloE 1 '"brightness"')"; run; wait_for '/hello ' 5
+  check hello_ids has 'body={"contract":1,"agent_version":"0.1.0","device":{"name":"FakeKindle".*"capabilities":\[{"id":"brightness"},{"id":"battery_level"},{"id":"cpu_load"},{"id":"refresh_screen"},{"id":"clock_offset"}\]}'
+  check no_warmth hasnt warmth
+  check no_serial hasnt serial_number
+  stop_all
+}
+test_state_only_enabled_ids() {
+  begin only_enabled; mk "$(helloE 1 '"brightness"')"; run; wait_for '/state ' 6
+  check only_brightness has '/state .*"values":{"brightness":10}'
+  check no_battery hasnt '/state .*battery_level'
+  check no_cpu hasnt '/state .*cpu_load'
+  stop_all
+}
+test_state_includes_time_and_not_virtual_or_write_only() {
+  begin time_virtual; mk "$(helloE 1 '"brightness","battery_level","cpu_load","refresh_screen","clock_offset"')"; run; wait_for '/state .*battery_level' 6
+  check has_time has '/state .*body={"time":[0-9]\{9,\},"values":{'
+  check no_clock_offset hasnt '/state .*clock_offset'
+  check no_refresh hasnt '/state .*refresh_screen'
+  stop_all
+}
+test_interval_respected() {
+  begin interval; mk "$(helloE 1 '"cpu_load"' '"cpu_load":60')"; run; wait_for '/state .*cpu_load' 6
+  sleep 4
+  check once eq "$(cnt '/state .*cpu_load')" 1
+  check heartbeats ge "$(cnt 'POST .*/state ')" 2
+  stop_all
+}
+test_command_applied_and_acked() {
+  begin cmd_ok; mk "$(helloE 1 '"brightness"')" "" \
+    '{"status":200,"body":{"config_rev":1,"commands":[{"id":"c1","capability":"brightness","value":40,"issued_at":1763200000}]}},'"$NOCMD"
+  run; wait_for '"acks":\[{"id":"c1","ok":true}\]' 8
+  check set_called grep -q '^brightness 40$' "$FAKE_DIR/set.log"
+  check ack_state has '/state .*"values":{"brightness":40},"acks":\[{"id":"c1","ok":true}\]'
+  stop_all
+}
+test_undeclared_command_acked_not_ok() {
+  begin cmd_bad; mk "$(helloE 1 '"brightness"')" "" \
+    '{"status":200,"body":{"config_rev":1,"commands":[{"id":"c1","capability":"warmth","value":5,"issued_at":1763200000}]}},'"$NOCMD"
+  run; wait_for '"acks":\[{"id":"c1","ok":false,"error":"' 8
+  check not_ok has '"acks":\[{"id":"c1","ok":false,"error":"[^"]\+"}\]'
+  check no_set eq "$(cat "$FAKE_DIR/set.log" 2>/dev/null | wc -l | tr -d ' ')" 0
+  stop_all
+}
+test_dev_get_failure_sends_null() {
+  begin get_fail; mk "$(helloE 1 '"battery_level","brightness"')"; export FAKE_FAIL_GET=battery_level; run
+  wait_for '/state ' 6
+  check null_sent has '/state .*"battery_level":null'
+  check others_ok has '/state .*"brightness":10'
+  check alive alive
+  stop_all
+}
+test_config_rev_change_fetches_config() {
+  begin cfg_rev; mk "$(helloE 1 '"brightness"')" '{"status":200,"body":{"config_rev":2}}' "" \
+    '{"status":200,"body":{"config_rev":2,"enabled":["battery_level"],"interval_s":{}}}'
+  run; wait_for '/state .*"battery_level":80' 8
+  check config_fetched has '^GET /api/panel_control/k/config '
+  check new_set has '/state .*"battery_level":80'
+  stop_all
+}
+test_409_triggers_new_hello() {
+  begin conflict; mk "$(helloE 1 '"brightness"')" '{"status":409,"body":{"error":"hello_required"}},'"$OKSTATE"; run
+  wait_for 'zzz' 0
+  _i=0; while [ "$(cnt '/hello ')" -lt 2 ] && [ $_i -lt 80 ]; do sleep 0.1; _i=$((_i+1)); done
+  check second_hello ge "$(cnt '/hello ')" 2
+  stop_all
+}
+test_html_error_body_backoff_no_crash() {
+  begin html502; E='{"status":502,"body":"<html>bad gateway</html>"}'; mk "$E" "$E" "$E" "$E"; run
+  wait_status '^state=backoff' 6
+  check backoff statusHas '^state=backoff'
+  sleep 2
+  check alive alive
+  check retried ge "$(cnt '/hello ')" 2
+  stop_all
+}
+test_unreachable_server_backoff() {
+  begin unreachable; PORT=1; write_cfg ""; start_agent
+  wait_status '^state=backoff' 8
+  check backoff statusHas '^state=backoff'
+  check has_error statusHas '^last_error=.\+'
+  check alive alive
+  stop_all
+}
+test_401_sets_error_status() {
+  begin auth401; mk '{"status":401,"body":{"error":"unauthorized"}}'; run
+  wait_status '^state=error' 6
+  check error statusHas '^state=error'
+  check alive alive
+  stop_all
+}
+test_bad_config_exit_2() {
+  begin badcfg; printf 'url = http://x\n' > "$PANEL_CONFIG"
+  sh "$AGENT" >"$D/agent.out" 2>&1; rc=$?
+  check exit2 eq "$rc" 2
+  check error_status statusHas '^state=error'
+  check reason statusHas '^last_error=.*token'
+}
+test_429_waits() {
+  begin lock429; mk '{"status":429,"body":{"error":"locked_out"}},'"$(helloE 1 '"brightness"')"; run
+  sleep 1
+  check one_hello eq "$(cnt '/hello ')" 1
+  wait_for '/state ' 8
+  check recovered ge "$(cnt '/state ')" 1
+  stop_all
+}
+test_poll_wait_never_zero() {
+  begin wait_min; mk "$(helloE 1 '"brightness"')"; run
+  _i=0; while [ "$(cnt 'GET .*commands?')" -lt 2 ] && [ $_i -lt 80 ]; do sleep 0.1; _i=$((_i+1)); done
+  check polled ge "$(cnt 'GET .*commands?wait=[1-9]')" 2
+  check no_zero hasnt 'commands?wait=0'
+  stop_all
+}
+test_serial_only_with_opt_in() {
+  begin serial_no; mk "$(helloE 1 '"brightness"')"; run ""; wait_for '/hello ' 5
+  check no_serial hasnt 'B0TESTSERIAL'; stop_all
+  begin serial_yes; mk "$(helloE 1 '"brightness"')"; run "send_serial = 1
+"; wait_for '/hello ' 5
+  check serial has 'B0TESTSERIAL'; stop_all
+}
+test_crlf_config() {
+  begin crlf; mk "$(helloE 1 '"brightness"')"; start_mock
+  printf '\357\273\277# c\r\nurl = http://127.0.0.1:%s/api/panel_control/k\r\ntoken = Maple-Orbit-Tiger-Quilt-Ember\r\n' "$PORT" > "$PANEL_CONFIG"
+  start_agent; wait_for '/state ' 6
+  check crlf_state has '^POST .*/state auth=Bearer Maple-Orbit-Tiger-Quilt-Ember body='
+  stop_all
+}
+test_second_instance_is_not_this_task() { echo "SKIP second_instance (launcher, Task 4)"; }
+
+for t in hello_then_state hello_body_has_catalog_ids_only_and_no_warmth state_only_enabled_ids \
+  state_includes_time_and_not_virtual_or_write_only interval_respected command_applied_and_acked \
+  undeclared_command_acked_not_ok dev_get_failure_sends_null config_rev_change_fetches_config \
+  409_triggers_new_hello html_error_body_backoff_no_crash unreachable_server_backoff 401_sets_error_status \
+  bad_config_exit_2 429_waits poll_wait_never_zero serial_only_with_opt_in crlf_config second_instance_is_not_this_task; do
+  "test_$t"
+done
+check no_schema_errors sh -c "! grep -r -e '-ERROR' $T --include=log"
+echo "t_agent: $N checks, $FAILS failed"
+[ $FAILS = 0 ]
