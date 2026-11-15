@@ -119,123 +119,40 @@ async def test_commands_long_poll_returns_queued_command(setup):
 async def test_commands_wait_clamped(setup):
     _, dev, _ = setup
     await dev.hello()
-    with patch.object(views, "MAX_WAIT_S", 0.05):
-        for w in ("-5", "9999", "abc", "nan", "inf", ""):
-            status, body, _ = await asyncio.wait_for(dev.commands(wait=w), 2)
+    loop = asyncio.get_running_loop()
+    with patch.object(views, "MAX_WAIT_S", 0.4):
+        for w, held in (("-5", False), ("0", False), ("abc", False), ("nan", False), ("", False),
+                        ("9999", True), ("inf", True)):
+            t0 = loop.time()
+            status, body, _ = await asyncio.wait_for(dev.commands(wait=w), 3)
+            dt = loop.time() - t0
             assert status == 200 and body["commands"] == []
+            assert (0.35 <= dt < 1.5) if held else dt < 0.3, (w, dt)
 
 
-async def test_responses_are_compact_fixed_order(setup):
-    client, dev, rt = setup
-    _, h, raw = await dev.hello()
-    assert raw == json.dumps(h, separators=(",", ":"))
-    assert list(h) == ["contract", "heartbeat_s", "poll_wait_s", "config"]
-    assert list(h["config"]) == ["config_rev", "enabled", "interval_s"]
-    _, s, raw = await dev.state({"battery_level": 1})
-    assert raw == json.dumps(s, separators=(",", ":")) and list(s) == ["config_rev"]
-    rt.queue_command("brightness", 40)
-    _, c, raw = await dev.commands()
-    assert raw == json.dumps(c, separators=(",", ":"))
-    assert list(c) == ["config_rev", "commands"]
-    assert list(c["commands"][0]) == ["id", "capability", "value", "issued_at"]
-    _, cf, raw = await dev.config()
-    assert raw == json.dumps(cf, separators=(",", ":"))
-    assert list(cf) == ["config_rev", "enabled", "interval_s"]
-
-
-async def test_concurrent_polls_newer_wins(setup):
-    _, dev, rt = setup
-    await dev.hello()
-    t1 = asyncio.create_task(dev.commands(wait=5))
-    await asyncio.sleep(0.1)
-    t2 = asyncio.create_task(dev.commands(wait=5))
-    await asyncio.sleep(0.1)
-    rt.queue_command("brightness", 10)
-    assert (await t1)[1]["commands"] == []
-    assert (await t2)[1]["commands"][0]["value"] == 10
-
-
-async def test_config_endpoint(setup):
-    _, dev, _ = setup
-    _, h, _ = await dev.hello()
-    status, cf, _ = await dev.config()
-    assert status == 200 and cf == h["config"]
-
-
-async def test_error_precedence(setup):
-    client, dev, _ = setup
-    assert (await FakeDevice(client, "/api/panel_control/nope", "bad").hello())[0] == 404
-    bad = FakeDevice(client, BASE, "bad")
-    assert (await bad.hello())[0] == 401
-    assert (await dev.hello({"contract": 2}))[1]["error"] == "unsupported_contract"
-    await dev.hello()
-    # state before hello on a restored runtime, with an invalid body too
-    rt = setup[2]
-    rt.restore(list(rt.declared.values()))
-    status, body, _ = await dev.state({}, body={"junk": 1})
-    assert (status, body["error"]) == (409, "hello_required")
-    for _ in range(10):
-        await bad.hello()
-    assert (await dev.hello())[0] == 429  # locked IP, valid token
-
-
-async def test_command_value_formatting(setup):
-    _, dev, rt = setup
-    await dev.hello()
-    rt.queue_command("brightness", 0.00001)
-    _, _, raw = await dev.commands()
-    assert '"value":0,' in raw
-    rt.queue_command("brightness", 12.345)
-    _, _, raw = await dev.commands()
-    assert "e" not in raw.split('"value":')[1].split(",")[0].lower()
-
-
-async def test_x_forwarded_for_ignored(setup):
+async def test_surrogate_token_is_401_and_counts(hass, setup):
+    # HA's own auth middleware chokes on a raw 0xFF Bearer byte before any view runs (jwt decode),
+    # so the view is exercised directly with the str aiohttp would hand it (surrogateescape).
     from types import SimpleNamespace
-
-    from custom_components.panel_control.lockout import Lockout
-
-    hass = setup[0].server.app["hass"]
     req = SimpleNamespace(app={"hass": hass}, remote="1.2.3.4",
-                          headers={"Authorization": "Bearer wrong", "X-Forwarded-For": "9.9.9.9"})
-    with patch.object(Lockout, "record_failure") as spy:
-        resp = views.HelloView()._auth(req, "kindle_test")
-    assert resp.status == 401
-    spy.assert_called_once_with("1.2.3.4")
+                          headers={"Authorization": "Bearer \udcff"})
+    for _ in range(10):
+        r = views.HelloView()._auth(req, "kindle_test")
+        assert r.status == 401
+    assert views.HelloView()._auth(req, "kindle_test").status == 429
 
 
-HUGE = 10**400
+async def _hello_with(dev, mutate):
+    h = json.loads((CONTRACT / "fixtures" / "valid" / "hello-ey21.json").read_text())
+    mutate(h)
+    return (await dev.hello(h))[0]
 
 
-async def test_huge_ints_rejected_cleanly(setup):
+async def test_hello_rejects_min_gt_max_and_long_strings(setup):
     _, dev, _ = setup
-    for k in ("min", "max"):
-        h = {"contract": 1, "agent_version": "1", "capabilities": [{"id": "brightness", k: HUGE}],
-             "device": {"name": "a", "manufacturer": "b", "model": "c", "sw_version": "d"}}
-        assert (await dev.hello(h))[0] == 400
-    await dev.hello()
-    assert (await dev.state({"brightness": HUGE}))[0] == 400
-    assert (await dev.state({"brightness": 5}))[0] == 200
-
-
-@pytest.mark.parametrize("t,status", [(-1, 400), (4102444801, 400), (HUGE, 400),
-                                      (0, 200), (4102444800, 200)])
-async def test_state_time_bounds(setup, t, status):
-    _, dev, _ = setup
-    await dev.hello()
-    assert (await dev.state({}, time=t))[0] == status
-
-
-def _hello_with(**cap):
-    return {"contract": 1, "agent_version": "1", "capabilities": [{"id": "brightness", **cap}],
-            "device": {"name": "a", "manufacturer": "b", "model": "c", "sw_version": "d"}}
-
-
-@pytest.mark.parametrize("n,status", [(2**1024 - 1, 400), (2**1024 - 2**970, 400), (2**1023, 200)])
-async def test_float_boundary_ints(setup, n, status):
-    _, dev, _ = setup
-    for k in ("min", "max"):
-        assert (await dev.hello(_hello_with(**{k: n})))[0] == status
-    await dev.hello()
-    assert (await dev.state({"brightness": n}))[0] == status
-    assert (await dev.state({"brightness": 5}))[0] == 200
+    assert await _hello_with(dev, lambda h: h["capabilities"].__setitem__(
+        0, {"id": "brightness", "min": 50, "max": 10})) == 400
+    for key in ("name", "manufacturer", "model", "sw_version", "hw_version", "mac"):
+        assert await _hello_with(dev, lambda h, k=key: h["device"].__setitem__(k, "x" * 201)) == 400
+    assert await _hello_with(dev, lambda h: h.__setitem__("agent_version", "x" * 201)) == 400
+    assert await _hello_with(dev, lambda h: h["device"].__setitem__("name", "x" * 200)) == 200

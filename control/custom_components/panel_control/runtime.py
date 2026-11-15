@@ -30,6 +30,25 @@ _LOG = logging.getLogger(__name__)
 _CTRL = re.compile(r"[\x00-\x1f\x7f-\x9f  ]")
 
 
+def _coerce(cat: dict, v):
+    """A value whose type does not match the capability is treated as null (unknown)."""
+    t = cat["type"]
+    if v is None:
+        return None
+    if t == "number":
+        try:
+            return v if not isinstance(v, bool) and isinstance(v, (int, float)) and math.isfinite(v) else None
+        except OverflowError:
+            return None
+    if t == "boolean":
+        return v if isinstance(v, bool) else None
+    if t == "text":
+        return v if isinstance(v, str) else None
+    if t == "enum":
+        return v if isinstance(v, str) and v in (cat.get("values") or []) else None
+    return None
+
+
 class DeviceRuntime:
     def __init__(self, device_id: str, enabled_default: Callable[[str], bool],
                  now: Callable[[], float] = lambda: time.time()) -> None:  # late-bound: freezable
@@ -98,14 +117,16 @@ class DeviceRuntime:
     def apply_state(self, state: dict, enabled: set[str]) -> dict[str, Any]:
         self.touch()
         self.last_acks = list(state.get("acks", []))
-        for a in self.last_acks:
-            if isinstance(a, dict) and a.get("ok") is False:
-                err = _CTRL.sub(" ", str(a.get("error") or ""))[:100]
-                cid = _CTRL.sub(" ", str(a.get("id")))[:32]
-                _LOG.warning("device %s: command %s (capability %s) failed: %s", self.device_id,
-                             cid, self._recent.get(a["id"] if isinstance(a.get("id"), str) else "", "unknown"), err)
+        failed = [a for a in self.last_acks if isinstance(a, dict) and a.get("ok") is False]
+        for a in failed[:5]:
+            err = _CTRL.sub(" ", str(a.get("error") or ""))[:100]
+            cid = _CTRL.sub(" ", str(a.get("id")))[:32]
+            _LOG.warning("device %s: command %s (capability %s) failed: %s", self.device_id,
+                         cid, self._recent.get(a["id"] if isinstance(a.get("id"), str) else "", "unknown"), err)
+        if len(failed) > 5:
+            _LOG.warning("device %s: %d more failed acks not shown", self.device_id, len(failed) - 5)
         ok = lambda i: i in self.declared and i in enabled  # noqa: E731
-        out = {i: v for i, v in state.get("values", {}).items()
+        out = {i: _coerce(CATALOG[i], v) for i, v in state.get("values", {}).items()
                if ok(i) and i != "clock_offset" and CATALOG[i]["access"] != "w"}
         if ok("clock_offset") and "time" in state:
             out["clock_offset"] = self.clock_offset(state["time"])
@@ -156,6 +177,11 @@ class DeviceRuntime:
         cmds = [c for c in self._queue.values() if now - c["issued_at"] <= COMMAND_TTL]
         self._queue = {}
         return cmds
+
+    def close(self) -> None:
+        """Wake an in-flight long poll so it returns [] (like a superseded one)."""
+        if self._waiter and not self._waiter.done():
+            self._waiter.set_result("superseded")
 
     async def wait_commands(self, wait: float) -> list[dict]:
         if self._queue:

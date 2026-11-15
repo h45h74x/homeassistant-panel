@@ -39,12 +39,36 @@ def test_unlocks_after_five_minutes():
     assert not lo.is_locked("1.1.1.1")
 
 
-def test_success_resets_counter():
+def test_success_does_not_reset_failures():
     _, lo = make()
     fail(lo, "1.1.1.1", 9)
     lo.record_success("1.1.1.1")
     fail(lo, "1.1.1.1", 9)
-    assert not lo.is_locked("1.1.1.1")
+    assert lo.is_locked("1.1.1.1")
+
+
+def test_hard_cap_evicts_oldest_unlocked_never_locked():
+    c, lo = make()
+    fail(lo, "9.9.9.9", 10)
+    for i in range(1500):
+        lo.record_failure("10.%d.%d.1" % (i // 250, i % 250))
+    assert len(lo._state) <= 1024
+    assert lo.is_locked("9.9.9.9")
+    assert "10.0.0.1" not in lo._state  # oldest unlocked evicted
+
+
+def test_prunes_at_most_once_per_second():
+    c, lo = make()
+    lo.record_failure("1.1.1.1")
+    calls = []
+    orig = lo._prune
+    lo._prune = lambda t: (calls.append(t), orig(t))
+    for _ in range(50):
+        lo.is_locked("1.1.1.1")
+    assert len(calls) == 0
+    c.t += 1
+    lo.is_locked("1.1.1.1")
+    assert len(calls) == 1
 
 
 def test_success_does_not_unlock():

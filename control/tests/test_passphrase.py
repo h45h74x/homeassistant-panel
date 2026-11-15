@@ -32,3 +32,11 @@ def test_matches():
     assert passphrase.matches(stored, " MAPLE orbit-Tiger quilt ember\n")
     assert not passphrase.matches(stored, "maple-orbit-tiger-quilt")
     assert not passphrase.matches(stored, "")
+
+
+def test_matches_hardening():
+    stored = "maple-orbit-tiger-quilt-ember"
+    assert not passphrase.matches(stored, "maple\udcffx")  # lone surrogate from a raw 0xFF byte
+    assert not passphrase.matches("", "")
+    assert not passphrase.matches(stored, None)
+    assert not passphrase.matches(stored, "maple\u00a0orbit\u2003tiger quilt ember")  # only [ \t\r\n-]

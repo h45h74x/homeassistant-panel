@@ -160,7 +160,7 @@ async def test_ack_logging_never_breaks_apply_state(hass, setup, caplog):
     acks.append({"id": "i\n\x1b[31m" + "d" * 100, "ok": False})
     rt.apply_state({"time": 1763200000, "values": {}, "acks": acks}, rt.enabled)
     msgs = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
-    assert len(msgs) == 7
+    assert len(msgs) == 6  # 5 shown plus a summary
     for m in msgs:
         assert not any(c in m for c in "\n\x1b  ") and len(m) < 250
 
@@ -179,3 +179,64 @@ async def test_ack_unhashable_id_does_not_raise(hass, setup, bad_id):
     await _hello_ok(hass, dev)
     rt = hass.data[DOMAIN]["entries"][entry.entry_id][0]
     rt.apply_state({"time": 1763200000, "values": {}, "acks": [{"id": bad_id, "ok": False}]}, rt.enabled)
+
+
+@pytest.mark.parametrize("cap,bad", [("battery_level", "abc"), ("battery_level", True), ("charging", "yes"),
+                                     ("charging", 1), ("ssid", 5), ("power_state", "bogus"),
+                                     ("power_state", 3), ("battery_level", None)])
+async def test_state_value_type_mismatch_is_null(hass, setup, cap, bad):
+    entry, dev = setup
+    await _hello_ok(hass, dev)
+    rt = hass.data[DOMAIN]["entries"][entry.entry_id][0]
+    rt.set_enabled(set(rt.declared))
+    out = rt.apply_state({"time": 1763200000, "values": {cap: bad, "uptime": 5}, "acks": []}, rt.enabled)
+    assert out[cap] is None and out["uptime"] == 5
+
+
+async def test_state_value_valid_types_kept(hass, setup):
+    entry, dev = setup
+    await _hello_ok(hass, dev)
+    rt = hass.data[DOMAIN]["entries"][entry.entry_id][0]
+    rt.set_enabled(set(rt.declared))
+    v = {"battery_level": 5.5, "charging": False, "power_state": "active", "ssid": "x"}
+    assert rt.apply_state({"time": 1763200000, "values": v, "acks": []}, rt.enabled).items() >= v.items()
+
+
+async def test_mismatched_value_gives_unknown_entity(hass, setup):
+    entry, dev = setup
+    await _hello_ok(hass, dev)
+    assert (await dev.state({"battery_level": "abc"}))[0] == 200
+    await hass.async_block_till_done()
+    assert hass.states.get(_eid(hass, "sensor", "battery_level")).state == "unknown"
+
+
+async def test_failed_ack_warnings_capped(hass, setup, caplog):
+    entry, dev = setup
+    await _hello_ok(hass, dev)
+    rt = hass.data[DOMAIN]["entries"][entry.entry_id][0]
+    caplog.set_level(logging.WARNING)
+    acks = [{"id": f"a{i}", "ok": False} for i in range(20)]
+    rt.apply_state({"time": 1763200000, "values": {}, "acks": acks}, rt.enabled)
+    msgs = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(msgs) == 6 and "15" in msgs[-1]
+
+
+async def test_unload_wakes_waiting_poll(hass, setup):
+    import asyncio
+    entry, dev = setup
+    await _hello_ok(hass, dev)
+    task = asyncio.create_task(dev.commands(wait=30))
+    await asyncio.sleep(0.2)
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    status, body, _ = await asyncio.wait_for(task, 2)
+    assert body.get("commands", []) == [] or status != 200
+
+
+async def test_failed_setup_leaves_no_runtime(hass):
+    entry = MockConfigEntry(domain=DOMAIN, unique_id="kf", data={"device_id": "kf", "passphrase": PASS, "name": "K"})
+    entry.add_to_hass(hass)
+    with patch("homeassistant.config_entries.ConfigEntries.async_forward_entry_setups",
+               side_effect=RuntimeError("boom")):
+        assert await async_setup_component(hass, DOMAIN, {})
+        await hass.async_block_till_done()
+    assert entry.entry_id not in hass.data[DOMAIN]["entries"]

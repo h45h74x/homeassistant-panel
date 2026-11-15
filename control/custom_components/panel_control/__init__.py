@@ -53,6 +53,17 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    try:
+        return await _setup(hass, entry)
+    except BaseException:
+        # a failed setup must not leave a live runtime that still authenticates devices
+        rt = hass.data[DOMAIN]["entries"].pop(entry.entry_id, (None,))[0]
+        if rt:
+            rt.close()
+        raise
+
+
+async def _setup(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     device_id = entry.data["device_id"]
     store = _store(hass, device_id)
     try:
@@ -116,7 +127,9 @@ async def _reload(hass: HomeAssistant, entry: ConfigEntry) -> None:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if ok:
-        hass.data[DOMAIN]["entries"].pop(entry.entry_id, None)
+        found = hass.data[DOMAIN]["entries"].pop(entry.entry_id, None)
+        if found:
+            found[0].close()
     return ok
 
 

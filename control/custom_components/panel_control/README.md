@@ -55,7 +55,10 @@ The Kindle cannot resolve `.local` or bare hostnames, only IP addresses, so the 
 ## Entities
 
 - Enabling an entity makes the device start reporting it, within one heartbeat (60 s).
-- Home Assistant reloads the integration shortly after you enable or disable an entity. The device then re-sends its hello; it gets `409 hello_required` and recovers on its own.
+- `ip_address`, `ssid` and `mac_address` are sensitive diagnostics: disabled by default and never logged.
+- The hello `mac` is stored in the device registry even while the `mac_address` entity is disabled. A paired device that claims another device's MAC would be merged into that device.
+- Enabling or disabling an entity takes effect on the device within one heartbeat (60 s) and also triggers a reload of the integration, which Home Assistant starts a few seconds after the change. A request that arrives during that reload can get a transient `404 unknown_device` or `409 hello_required`. The device handles both by backing off and re-sending hello.
+- The Kindle `config` file also accepts optional `device_name` and `send_serial=1`.
 
 ## Behaviour
 

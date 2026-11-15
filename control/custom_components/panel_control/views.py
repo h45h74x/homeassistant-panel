@@ -18,6 +18,7 @@ from .enablement import compute_enabled
 from .runtime import CATALOG
 
 MAX_WAIT_S = 55
+MAX_STR = 200
 HEARTBEAT_S = 60
 POLL_WAIT_S = 25
 _DEVICE_REQ = ("name", "manufacturer", "model", "sw_version")
@@ -62,10 +63,10 @@ def _keys_ok(d, required, optional=()) -> bool:
 def _validate_hello(b) -> str | None:
     if not _keys_ok(b, ("contract", "agent_version", "device", "capabilities")):
         return "bad hello shape"
-    if not isinstance(b["agent_version"], str):
+    if not isinstance(b["agent_version"], str) or len(b["agent_version"]) > MAX_STR:
         return "agent_version"
     d = b["device"]
-    if not _keys_ok(d, _DEVICE_REQ, _DEVICE_OPT) or not all(isinstance(v, str) for v in d.values()):
+    if not _keys_ok(d, _DEVICE_REQ, _DEVICE_OPT) or not all(isinstance(v, str) and len(v) <= MAX_STR for v in d.values()):
         return "bad device"
     caps = b["capabilities"]
     if not isinstance(caps, list):
@@ -79,6 +80,8 @@ def _validate_hello(b) -> str | None:
         seen.add(c["id"])
         if not all(_num(c[k]) for k in ("min", "max") if k in c):
             return "bad min/max"
+        if "min" in c and "max" in c and c["min"] > c["max"]:
+            return "min greater than max"
     return None
 
 
@@ -200,7 +203,7 @@ class CommandsView(_Base):
             wait = float(request.query.get("wait", 0))
         except ValueError:
             wait = 0
-        wait = min(wait, MAX_WAIT_S) if math.isfinite(wait) and wait > 0 else 0
+        wait = min(wait, MAX_WAIT_S) if wait > 0 else 0  # inf clamps, nan/negative are 0
         cmds = await rt.wait_commands(wait)
         rt.touch()
         return _dump({"config_rev": rt.config(rt.enabled)["config_rev"], "commands": [

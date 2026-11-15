@@ -12,8 +12,12 @@ def generate() -> str:
 
 
 def normalize(raw: str) -> str:
-    return re.sub(r"[\s-]+", "", raw.lower())
+    return re.sub(r"[ \t\r\n-]+", "", raw.lower())  # exactly the contract's set
 
 
 def matches(stored: str, presented: str) -> bool:
-    return hmac.compare_digest(normalize(stored).encode(), normalize(presented).encode())
+    if not isinstance(stored, str) or not isinstance(presented, str):
+        return False
+    a = normalize(stored).encode("utf-8", "surrogateescape")  # raw header bytes arrive as lone surrogates
+    b = normalize(presented).encode("utf-8", "surrogateescape")
+    return bool(a) and hmac.compare_digest(a, b)
