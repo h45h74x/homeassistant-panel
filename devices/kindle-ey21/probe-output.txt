@@ -1,0 +1,195 @@
+
+
+Welcome to Kindle!
+
+## cpuinfo
+Processor	: ARMv7 Processor rev 5 (v7l)
+BogoMIPS	: 799.53
+Features	: swp half thumb fastmult vfp edsp neon vfpv3 
+CPU implementer	: 0x41
+CPU architecture: 7
+CPU variant	: 0x2
+CPU part	: 0xc08
+CPU revision	: 5
+
+Hardware	: Amazon.com MX50 YOSHIME Board
+Revision	: 50011
+Serial		: "<redacted>"
+BoardId		: "<redacted>"
+## meminfo
+MemTotal:         256180 kB
+MemFree:           12712 kB
+Buffers:           25196 kB
+Cached:            82140 kB
+SwapCached:            0 kB
+## loadavg
+0.38 0.20 0.21 3/345 13884
+## df
+Filesystem           1K-blocks      Used Available Use% Mounted on
+/dev/root               356471    305718     43591  88% /
+tmpfs                   128088        60    128028   0% /dev
+tmpfs                   128088         0    128088   0% /dev/shm
+tmpfs                    32768       392     32376   1% /var
+/dev/loop/2                216       216         0 100% /lib/firmware/cyttsp
+/dev/loop/3               2536      2536         0 100% /usr/share/X11/xkb
+/dev/loop/4             105604    105604         0 100% /usr/java/lib/fonts
+/dev/loop/5               1404      1404         0 100% /etc/kdb.src
+/dev/loop/6               9324      9324         0 100% /usr/lib/locale
+/dev/loop/7              22680     22680         0 100% /usr/share/keyboard
+/dev/mmcblk0p3           63461     28097     32088  47% /var/local
+fsp                    1392632    151008   1241624  11% /mnt/us
+/dev/loop/0            1392632    151008   1241624  11% /mnt/base-us
+## tools
+/usr/bin/curl
+/usr/bin/wget
+/usr/bin/nc
+/bin/busybox
+/usr/bin/sqlite3
+/usr/bin/lipc-probe
+/usr/bin/lipc-get-prop
+/usr/bin/lipc-set-prop
+## lipc services
+com.lab126.todo
+com.lab126.amazonRegistrationService
+com.lab126.kindleStatusService
+com.lab126.winmgr.ligl
+com.lab126.booklet
+com.lab126.powerd
+com.lab126.booklet.settings
+com.lab126.kaf
+com.lab126.winmgr
+com.lab126.deviced
+com.lab126.grokservice
+com.amazon.ebook.util.net.certmanutilities
+com.lab126.booklet.home
+com.lab126.odot
+com.lab126.freetime
+com.lab126.transferService
+com.lab126.JournalingService
+com.lab126.adManager
+com.lab126.LocalizationServices
+com.lab126.pmond
+com.lab126.DeviceAuthenticationService
+com.lab126.reader.readingtimer
+com.lab126.blanket
+com.lab126.archive
+com.lab126.system
+com.amazon.kindle.inputMethod
+com.lab126.dsus
+com.lab126.indexer
+com.lab126.extractor.java
+com.lab126.scanner
+com.lab126.transfer
+com.lab126.dynconfig
+com.lab126.cmd
+com.lab126.stackdumpd
+com.lab126.todo.kaf
+com.lab126.refreshCache
+com.lab126.keyboard
+com.lab126.readingstreams
+com.lab126.IdentityService
+com.lab126.stored
+com.lab126.pillow
+com.lab126.demoservice
+com.lab126.dpm.apps
+com.lab126.wifid
+com.lab126.mobi8
+com.lab126.lxinit
+com.lab126.appmgrd
+com.lab126.devicemetrics
+com.lab126.phd
+com.lab126.adRotationManager
+com.lab126.sph
+com.lab126.volumd
+com.lab126.bookcacher
+com.lab126.booklet.kindlet
+com.lab126.tphv3
+com.lab126.instantSearch
+com.lab126.coverArtService
+com.lab126.ccat
+com.lab126.contentpackd
+com.lab126.linux.arm.connectionutilities
+com.lab126.reader.languagelayer
+com.lab126.household
+com.lab126.dpmManager
+com.lab126.KindleIdentity
+com.lab126.sharing
+com.lab126.reader.qa
+com.lab126.cvm
+com.lab126.merchant
+org.freedesktop.DBus
+## powerd
+	w 	Int	touchScreenSaverTimeout
+	w	Int	deferSuspend
+	w	Int	wakeUp
+	w	Int	rtcWakeup
+	r	Str	state	[active]
+	w	Int	suspendGrace
+	w	Int	deferRestart
+	w	Str	shutdownAlertResponse
+	w	Int	addSuspendLevels
+	rw	Str	logLevel	[Current log level=none
+(Possible transient levels: all, perf, debug[9-0], info, warn, error, crit, none)
+(Possible persistent levels: p_all, p_perf, p_debug[0-9], p_info, p_warn, p_error, p_crit, p_none)]
+	r	Int	battLevel	[88]
+	rw	Int	preventScreenSaver	[0]
+	rw	Int	flIntensity	[3]
+	rw	Str	logMask	[0x00000000]
+	rw	Int	flAuto	[0]
+	r	Int	flMaxIntensity	[24]
+	r	Int	battTemperature	[73]
+	w	Int	abortSuspend
+	r	Int	flTurboBrightnessIntensity	[0]
+	w	Int	powerButton
+	w	Int	flStartup
+	r	Str	status	[Powerd state: Active
+Remaining time in this state: 566.519701
+defer_suspend:0
+suspend_grace:0
+prevent_screen_saver:0
+drive_mode:off
+Battery Level: 88%
+Last batt event at: 88%
+Charging: No
+batt_full=0
+Battery logging: On
+]
+	w	Int	sendPendingResume
+	r	Int	isCharging	[0]
+## powerd values
+flIntensity=3
+currentAmberLevel=com.lab126.powerd failed to access property currentAmberLevel (0x8 lipcErrNoSuchProperty)
+battLevel=88
+isCharging=0
+preventScreenSaver=0
+state=active
+## backlight sysfs
+ls: /sys/class/backlight/: No such file or directory
+/sys/class/backlight/*
+cat: can't open '/sys/class/backlight/*/brightness': No such file or directory
+cat: can't open '/sys/class/backlight/*/max_brightness': No such file or directory
+## power_supply
+/sys/class/power_supply/*
+capacity=cat: can't open '/sys/class/power_supply/*/capacity': No such file or directory
+status=cat: can't open '/sys/class/power_supply/*/status': No such file or directory
+current_now=cat: can't open '/sys/class/power_supply/*/current_now': No such file or directory
+voltage_now=cat: can't open '/sys/class/power_supply/*/voltage_now': No such file or directory
+temp=cat: can't open '/sys/class/power_supply/*/temp': No such file or directory
+## wifi
+CONNECTED
+lo        Link encap:Local Loopback  
+          inet addr:127.0.0.1  Mask:255.0.0.0
+          UP LOOPBACK RUNNING  MTU:16436  Metric:1
+          RX packets:3088 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:3088 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:0 
+          RX bytes:512255 (500.2 KiB)  TX bytes:512255 (500.2 KiB)
+
+wlan0     Link encap:Ethernet  HWaddr <redacted>  
+          inet addr:<redacted>  Bcast:<redacted>  Mask:255.255.255.0
+          UP BROADCAST RUNNING MULTICAST  MTU:1500  Metric:1
+          RX packets:2135 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:706 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:1000 
+          RX bytes:1848851 (1.7 MiB)  TX bytes:91744 (89.5 KiB)
+

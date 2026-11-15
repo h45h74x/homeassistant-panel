@@ -1,0 +1,366 @@
+
+
+Welcome to Kindle!
+
+## alive
+ 15:53:17 up  1:49, load average: 0.56, 0.15, 0.12
+## tools (path or MISSING)
+jq=MISSING
+python=MISSING
+python3=MISSING
+perl=MISSING
+lua=/usr/bin/lua
+awk=/usr/bin/awk
+sed=/bin/sed
+tr=/usr/bin/tr
+cut=/usr/bin/cut
+od=MISSING
+hexdump=/usr/bin/hexdump
+base64=MISSING
+md5sum=/usr/bin/md5sum
+sha1sum=MISSING
+sha256sum=/usr/bin/sha256sum
+openssl=/usr/bin/openssl
+curl=/usr/bin/curl
+wget=/usr/bin/wget
+nc=/usr/bin/nc
+timeout=/usr/bin/timeout
+date=/bin/date
+eips=MISSING
+fbink=MISSING
+flock=/usr/bin/flock
+sort=/usr/bin/sort
+head=/usr/bin/head
+tail=/usr/bin/tail
+xargs=/usr/bin/xargs
+printf=/usr/bin/printf
+mktemp=/bin/mktemp
+## busybox applets
+[ [[ acpid addgroup adduser adjtimex ash awk basename bash beep bootchartd brctl cat chgrp chmod chown chpasswd chroot cmp cp crond crontab cut date dd delgroup deluser devmem df dhcprelay diff dirname dmesg dnsdomainname du dumpleases echo env expr false fbset fbsplash fdisk fgconsole fgrep find flock freeramdisk fsync ftpd getty grep gunzip gzip hd head hexdump hostname hwclock id ifconfig ifdown ifenslave ifplugd ifup install ionice ip kbd_mode kill killall klogd less ln logger login logname losetup lpd lpq lpr ls lspci lsusb lzop lzopcat makedevs makemime man md5sum microcom mkdir mkfifo mknod mktemp more mv nc netstat nice nslookup passwd pgrep pidof ping pipe_progress pivot_root pkill popmaildir printf pwd rdate rdev readlink realpath reformime renice rev rm rmdir route rtcwake run-parts scriptreplay sed sendmail seq setfont sh sha256sum sha512sum showkey sleep smemcap sort start-stop-daemon stat strings stty su sync tac tail tar tee telnet test time timeout touch tr traceroute true tty tunctl udhcpc udhcpd uname uniq unlzop unxz unzip uptime usleep vi volname wall wc wget which who whoami xargs xz xzcat yes zcat 
+## curl
+curl 7.33.0 (arm-unknown-linux-gnueabi) libcurl/7.33.0 OpenSSL/1.0.1g zlib/1.2.3 c-ares/1.9.1
+Protocols: gopher http https imap imaps pop3 pop3s rtsp smtp smtps 
+## curl can send a body from stdin and headers
+Usage: curl [options...] <url>
+Options: (H) means HTTP/HTTPS only, (F) means FTP only
+     --anyauth       Pick "any" authentication method (H)
+## sh features
+3 bc
+## sed -n regex (needed to parse JSON)
+7
+## paths
+ls: /mnt/us/kmc: No such file or directory
+ls: /mnt/us/linkss: No such file or directory
+/mnt/us/documents
+/mnt/us/extensions
+/mnt/us/koreader
+/mnt/us/mkk
+/mnt/us/usbnet
+/var/local/kmc
+## extensions
+KUAL.cfg
+MRInstaller
+koreader
+renameotabin
+usbnet
+## documents (scriptlets are *.sh here)
+KUAL-KDK-2.0.azw2
+Run Hotfix.run_hotfix
+dictionaries
+## mkk / dispatch (search-bar command routing)
+drwxrwxrwx    2 root     root          8192 Nov  1  2013 .
+drwxrwxrwx   15 root     root          8192 Nov 15 15:15 ..
+-rwxrwxrwx    1 root     root          8150 Nov  1  2013 bridge.conf
+-rwxrwxrwx    1 root     root         27790 Nov  1  2013 bridge.sh
+-rwxrwxrwx    1 root     root         40581 Nov  1  2013 developer.keystore
+-rwxrwxrwx    1 root     root         59036 Nov  1  2013 gandalf
+-rwxrwxrwx    1 root     root         29036 Nov  1  2013 json_simple-1.1.jar
+/var/local/kmc/hotfix/jobs/install_dispatch.sh
+/mnt/us/mkk/bridge.sh
+/mnt/us/extensions/koreader/bin/koreader-ext.sh
+/mnt/us/extensions/koreader/bin/libkohelper.sh
+/mnt/us/extensions/koreader/menu.json
+/mnt/us/extensions/renameotabin/bin/rename.sh
+/mnt/us/extensions/renameotabin/bin/restore.sh
+/mnt/us/extensions/renameotabin/menu.json
+/mnt/us/extensions/MRInstaller/bin/mrinstaller.sh
+/mnt/us/extensions/MRInstaller/menu.json
+/mnt/us/extensions/usbnet/menu.json
+/mnt/us/extensions/usbnet/bin/usbnet.sh
+## things that mention 'log' commands
+--- /mnt/us/mkk/bridge.sh
+#!/bin/sh
+#
+# Kindle FW 5.x JailBreak Bridge
+#
+# $Id: bridge.sh 19426 2024-04-20 20:03:17Z NiLuJe $
+#
+##
+
+BRIDGE_REV="$( echo '$Revision: 19426 $' | cut -d ' ' -f 2 )"
+
+ROOT=""
+ROOTPART="mmcblk0p1"
+IS_TOUCH="false"
+IS_PW="false"
+IS_PW2="false"
+IS_KV="false"
+IS_KT2="false"
+IS_PW3="false"
+IS_KOA="false"
+IS_KT3="false"
+IS_KOA2="false"
+IS_PW4="false"
+IS_KT4="false"
+IS_KOA3="false"
+IS_PW5="false"
+IS_KT5="false"
+IS_KS="false"
+K5_ATLEAST_54="false"
+K5_ATLEAST_512="false"
+MKK_PERSISTENT_STORAGE="/var/local/mkk"
+RP_PERSISTENT_STORAGE="/var/local/rp"
+VARLOCAL_OOS="false"
+
+# Pull some helper functions for logging
+source /etc/upstart/functions
+
+LOG_DOMAIN="jb_bridge"
+
+logmsg()
+{
+	f_log "${1}" "${LOG_DOMAIN}" "${2}" "${3}" "${4}"
+}
+
+RW=""
+mount_rw() {
+	if [ -z "${RW}" ] ; then
+		RW="yes"
+		mount -o rw,remount /
+	fi
+}
+
+mount_ro() {
+	if [ -n "${RW}" ] ; then
+		RW=""
+		mount -o ro,remount /
+	fi
+}
+
+make_mutable() {
+	local my_path="${1}"
+## stock command table (search bar ';' commands)
+ls: /app/kpp_app_cmds.json: No such file or directory
+ls: /opt/amazon/ebook/kpp_app_cmds.json: No such file or directory
+## upstart jobs mentioning mkk, dispatch or log
+acxmgrd.conf
+appmgrd.conf
+archive.conf
+battery
+battery.conf
+blanket_functions
+bundlefuncs
+cmd.conf
+console.conf
+contentpack_fonts_dependency.conf
+contentpackd.conf
+cron.conf
+cyttsp
+dbus.conf
+devcap.conf
+deviced.conf
+display
+display.conf
+dmld.conf
+dpmd.conf
+dynconfig.conf
+early_progress.conf
+env
+filesystems.conf
+filesystems_setup.conf
+filesystems_userstore.conf
+filesystems_var_local.conf
+firsttime
+framework
+framework.conf
+framework_setup.conf
+functions
+haptics
+init.sh
+kb.conf
+kindle.conf
+kmc.conf
+lab126.conf
+lab126_gui.conf
+lab126_gui_monitor.conf
+lab126_gui_setup.conf
+langpicker.conf
+libc_err_patterns.txt
+lipcd.conf
+makexconfig
+mcsd.conf
+mesquite_copy
+mesquite_functions
+migrate_db.conf
+modules.conf
+## free space
+Filesystem           1K-blocks      Used Available Use% Mounted on
+fsp                    1392632    151008   1241624  11% /mnt/us
+/dev/root               356471    305718     43591  88% /
+             total       used       free     shared    buffers     cached
+Mem:        256180     238836      17344          0      26572      84620
+-/+ buffers/cache:     127644     128536
+
+## follow-up read-only probe: dispatch + eips
+Welcome to Kindle!
+
+## eips
+ls: /usr/bin/eips: No such file or directory
+ls: /sbin/eips: No such file or directory
+-rwxr-xr-x    1 root     root         54032 Jun 23  2015 /usr/sbin/eips
+/usr/sbin/eips
+## hotfix dir
+/var/local/kmc/hotfix:
+drwxrwsr-x    3 1001     javauser      1024 Mar  1  2015 .
+drwxrwsr-x    5 1001     javauser      1024 Mar  1  2015 ..
+-rw-rw-r--    1 1001     javauser      1797 May 27 08:24 appreg_register_hotfix_runner.sql
+-rw-rw-r--    1 1001     javauser      2356 May 27 08:24 appreg_register_sh_integration.sql
+-rwxrwxr-x    1 1001     javauser      1167 May 27 08:24 hotfix.sh
+drwxrwsr-x    2 1001     javauser      1024 Mar  1  2015 jobs
+-rw-rw-r--    1 1001     javauser      4260 May 27 08:24 kmc.conf
+-rwxrwxr-x    1 1001     javauser      9248 May 27 08:24 libhotfixutils
+-rwxrwxr-x    1 1001     javauser       329 May 27 08:24 run_hotfix.sh
+
+/var/local/kmc/hotfix/jobs:
+drwxrwsr-x    2 1001     javauser      1024 Mar  1  2015 .
+drwxrwsr-x    3 1001     javauser      1024 Mar  1  2015 ..
+-rwxrwxr-x    1 1001     javauser      1557 May 27 08:24 00_setup_kmc_binaries.sh
+-rwxrwxr-x    1 1001     javauser       553 May 27 08:24 install_debug_commands_kpp_app.sh
+-rwxrwxr-x    1 1001     javauser       603 May 27 08:24 install_debug_commands_kpp_sys.sh
+-rwxrwxr-x    1 1001     javauser       659 May 27 08:24 install_debug_commands_pillow.sh
+-rwxrwxr-x    1 1001     javauser       532 May 27 08:24 install_dispatch.sh
+-rwxrwxr-x    1 1001     javauser       416 May 27 08:24 install_gm_debugging.sh
+-rwxrwxr-x    1 1001     javauser       389 May 27 08:24 install_kmc_upstart.sh
+-rwxrwxr-x    1 1001     javauser      1357 May 27 08:24 install_mkk_dev_keystore.sh
+-rwxrwxr-x    1 1001     javauser       563 May 27 08:24 install_mkk_kindlet_jb.sh
+-rwxrwxr-x    1 1001     javauser       228 May 27 08:24 install_mntus_exec.sh
+-rwxrwxr-x    1 1001     javauser      2314 May 27 08:24 install_update_keys.sh
+-rwxrwxr-x    1 1001     javauser       208 May 27 08:24 setup_fbink.sh
+-rwxrwxr-x    1 1001     javauser      1799 May 27 08:24 setup_gandalf.sh
+## install_dispatch.sh
+# Ensure we have a dispatch script
+if [ -f "${MKK_PERSISTENT_STORAGE}/dispatch.sh" ] ; then
+	# If logThis.sh isn't installed   OR   It isn't our Dispatch script
+	if [ ! -f "/usr/bin/logThis.sh" ] || ! grep -q "Dispatch" "/usr/bin/logThis.sh" ; then
+		logmsg "I" "install_dispatch" "" "Copying the dispatch script"
+		make_mutable "/usr/bin/logThis.sh"
+		rm -rf "/usr/bin/logThis.sh"
+		cp -f "${MKK_PERSISTENT_STORAGE}/dispatch.sh" "/usr/bin/logThis.sh"
+		chmod 0755 "/usr/bin/logThis.sh"
+		make_immutable "/usr/bin/logThis.sh"
+	fi
+fi## lua modules
+Lua 5.1.4  Copyright (C) 1994-2008 Lua.org, PUC-Rio
+true	table: 0x35598
+
+## follow-up read-only probe: installed dispatch script
+Welcome to Kindle!
+
+## logThis.sh
+-rwxr-xr-x    1 root     root          1852 Mar  1  2015 /usr/bin/logThis.sh
+#!/bin/sh
+#
+# Kindle Oasis Dispatch
+#
+# $Id: dispatch.sh 16928 2020-03-08 18:29:45Z NiLuJe $
+#
+##
+
+## NOTE: We always bridge this, even though it's no longer accessible on stock FW >= 5.12.2,
+##       because the ;log debug command is gone. Emphasis on "stock", though ;).
+
+## Check our args...
+if [ "$#" -ne 1 ] ; then
+	/var/local/kmc/bin/fbink -x 1 -y 0 -S 3  "No arg passed. Select from mrpi or runme"
+	return 0
+fi
+
+case "${1}" in
+	# Launch MRPI!
+	"mrpi" | "MRPI" | m* )
+		if [ -f "/mnt/us/extensions/MRInstaller/bin/mrinstaller.sh" ] ; then
+			if [ "$(id -u)" -ne 0 ] ; then
+				if [ -x "/var/local/mkk/gandalf" ] ; then
+					exec /var/local/mkk/su -s /bin/sh -c "/mnt/us/extensions/MRInstaller/bin/mrinstaller.sh launch_installer"
+				else
+					/var/local/kmc/bin/fbink -x 1 -y 0 -S 3  "No wizard to help you out.              "
+					# Run it anyway, who knows.
+					exec /bin/sh "/mnt/us/extensions/MRInstaller/bin/mrinstaller.sh" launch_installer
+				fi
+			else
+				exec /bin/sh "/mnt/us/extensions/MRInstaller/bin/mrinstaller.sh" launch_installer
+			fi
+		else
+			/var/local/kmc/bin/fbink -x 1 -y 0 -S 3  "MRPI is not installed.                  "
+		fi
+	;;
+	# Launch user script!
+	"custom" | "CUSTOM" | "runme" | "RUNME" | r* )
+		if [ -f "/mnt/us/RUNME.sh" ] ; then
+			if [ "$(id -u)" -ne 0 ] ; then
+				if [ -x "/var/local/mkk/gandalf" ] ; then
+					exec /var/local/mkk/su -s /bin/sh -c "/mnt/us/RUNME.sh"
+				else
+					/var/local/kmc/bin/fbink -x 1 -y 0 -S 3  "No wizard to help you out.              "
+					# Run it anyway, who knows.
+					exec /bin/sh "/mnt/us/RUNME.sh"
+				fi
+			else
+				exec /bin/sh "/mnt/us/RUNME.sh"
+			fi
+		else
+			/var/local/kmc/bin/fbink -x 1 -y 0 -S 3  "No user script found.                   "
+		fi
+	;;
+	* )
+		/var/local/kmc/bin/fbink -x 1 -y 0 -S 3  "Wrong arg. Select from mrpi or runme    "
+	;;
+esac
+
+return 0
+## mkk persistent
+drwxrwsr-x    2 root     root          1024 Mar  1  2015 .
+drwxrwsr-x   25 framewor javauser      1024 Nov 15 15:53 ..
+-rw-rw-r--    1 root     root         12473 May 27 08:24 developer.keystore
+-rw-rw-r--    1 root     root          1852 May 27 08:24 dispatch.sh
+lrwxrwxrwx    1 root     root            26 Mar  1  2015 gandalf -> /var/local/kmc/bin/gandalf
+-rw-rw-r--    1 root     root         29036 May 27 08:24 json_simple-1.1.jar
+lrwxrwxrwx    1 root     root            22 Mar  1  2015 su -> /var/local/mkk/gandalf
+-rw-rw-r--    1 root     root          4096 May 27 08:24 updater_keys.sqsh
+## debug cmds jobs
+if [ -f "/app/kpp_app_cmds.json" ] ; then
+	if ! grep -q "logThis.sh" "/app/kpp_app_cmds.json" ; then
+		logmsg "I" "install_log_kpp" "" "Patching in the dispatch command for kpp"
+        # KPP (React, new UI) (app)
+        sed -e '/^{/a\' -e '    ";log" : "/usr/bin/logThis.sh",' -i "/app/kpp_app_cmds.json"
+	fi
+
+	if ! grep -q "KMCLog.sh" "/app/kpp_app_cmds.json" ; then
+		logmsg "I" "install_log_kpp" "" "Patching in the KMC log command for kpp"
+        sed -e '/^{/a\' -e '    ";kmclog" : "/var/local/kmc/KMCLog.sh",' -i "/app/kpp_app_cmds.json"
+	fi
+filogmsg "I" "install" "" "Installing fbink"
+mkdir -p "/mnt/us/libkh/bin"
+rm -f /mnt/us/libkh/bin/fbink
+cp -f "${KMC_PERSISTENT_STORAGE}/bin/fbink" "/mnt/us/libkh/bin/fbink"
+chmod a+rx "/mnt/us/libkh/bin/fbink"## fbink
+/var/local/kmc/armel/bin:
+-rwxrwxr-x    1 1001     javauser   1327064 May 27 08:24 fbdepth
+-rwxrwxr-x    1 1001     javauser   1386360 May 27 08:24 fbink
+-rwsr-sr-x    1 root     root         59036 May 27 08:24 gandalf
+-rwxrwxr-x    1 1001     javauser   1327156 May 27 08:24 input_scan
+-rwxrwxr-x    1 1001     javauser     17000 May 27 08:24 sh_integration_launcher
+lrwxrwxrwx    1 root     root            32 Mar  1  2015 su -> /var/local/kmc/armel/bin/gandalf
+
+/var/local/kmc/armhf/bin:
+-rwxrwxr-x    1 1001     javauser   1327520 May 27 08:24 fbdepth
