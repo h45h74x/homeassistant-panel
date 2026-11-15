@@ -17,6 +17,11 @@ CMD_ORDER = ["id", "capability", "value", "issued_at"]
 VALUE_RE = re.compile(r'"value":(null|true|false|-?[0-9]+(\.[0-9]+)?)[,}]')
 
 
+def values_ok(text):
+    # every "value": must match, not just one
+    return len(VALUE_RE.findall(text)) == text.count('"value":')
+
+
 def agent_fixtures():
     out = []
     for prefix in ORDER:
@@ -39,6 +44,8 @@ def test_agent_parsed_fixtures_are_compact(f):
     data = json.loads(text)
     assert list(data) == ORDER[prefix_of(f)]
     assert json.dumps(data, separators=(",", ":")) == text[:-1]
+    if "config" in data:
+        assert list(data["config"]) == ORDER["config"]
     for c in data.get("commands", []):
         assert list(c) == CMD_ORDER
 
@@ -63,11 +70,14 @@ def test_commands_sed_extractable(f):
 def test_command_values_numeric_form():
     assert commands_fixtures()
     for f in commands_fixtures():
-        assert VALUE_RE.search(f.read_text()) or '"commands":[]' in f.read_text()
+        assert values_ok(f.read_text()), f.name
+    good = '{"id":"a","capability":"x","value":1,"issued_at":1}'
+    assert values_ok(good)
+    assert not values_ok(good + ',{"id":"b","capability":"x","value":1e3,"issued_at":1}')
     bad = sorted((FIX / "wire-invalid").glob("commands-*.json"))
     assert [f.name for f in bad] == ["commands-exponent.json", "commands-nan.json"]
     for f in bad:
-        assert not VALUE_RE.search(f.read_text()), f.name
+        assert not values_ok(f.read_text()), f.name
 
 
 def test_passphrase_vectors():
