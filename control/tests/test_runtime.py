@@ -196,3 +196,70 @@ async def test_second_waiter_supersedes_first():
     assert not t2.done()
     rt.queue_command("brightness", 7)
     assert (await t2)[0]["value"] == 7
+
+
+def test_expiry_boundary():
+    for dt, kept in ((299, 1), (300, 1), (301, 0)):
+        rt, clock = make()
+        rt.queue_command("brightness", 10)
+        clock.t += dt
+        assert len(rt.take_commands()) == kept
+
+
+def test_wrong_types_rejected():
+    rt, _ = make()
+    for cap, v in (("brightness", True), ("keep_awake", 1), ("keep_awake", "on"),
+                   ("brightness", "5"), ("brightness", float("nan")),
+                   ("brightness", float("inf")), ("brightness", float("-inf"))):
+        with pytest.raises(ValueError):
+            rt.queue_command(cap, v)
+    rt.apply_hello(hello("clock_offset", "warmth"))
+    rt.set_enabled({"warmth"})
+    with pytest.raises(ValueError):
+        rt.queue_command("warmth", float("inf"))
+
+
+def test_negative_zero():
+    rt, _ = make()
+    rt.queue_command("brightness", -0.0)
+    v = rt.take_commands()[0]["value"]
+    assert v == 0 and isinstance(v, int)
+
+
+def test_hello_limits_tighter_than_catalog():
+    rt, _ = make()
+    rt.apply_hello(hello("brightness", brightness={"min": 10, "max": 50}))
+    for bad in (9, 51):
+        with pytest.raises(ValueError):
+            rt.queue_command("brightness", bad)
+    rt.queue_command("brightness", 10)
+    rt.queue_command("brightness", 50)
+
+
+def test_replaced_command_old_id_gone():
+    rt, _ = make()
+    a = rt.queue_command("brightness", 1)
+    b = rt.queue_command("brightness", 2)
+    cmds = rt.take_commands()
+    assert [c["id"] for c in cmds] == [b] and a not in [c["id"] for c in cmds]
+
+
+def test_set_enabled_refuses_and_purges():
+    rt, _ = make()
+    rt.queue_command("brightness", 5)
+    rt.queue_command("keep_awake", True)
+    rt.set_enabled({"keep_awake"})
+    with pytest.raises(ValueError):
+        rt.queue_command("brightness", 6)
+    assert [c["capability"] for c in rt.take_commands()] == ["keep_awake"]
+
+
+def test_set_enabled_survives_restore_and_args_do_not_overwrite():
+    rt, _ = make()
+    rt.set_enabled({"keep_awake"})
+    rt.restore([{"id": "brightness"}, {"id": "keep_awake"}])
+    with pytest.raises(ValueError):
+        rt.queue_command("brightness", 5)
+    rt.config({"brightness"})
+    rt.apply_state({"time": 1000, "values": {}}, {"brightness"})
+    assert rt.enabled == {"keep_awake"}

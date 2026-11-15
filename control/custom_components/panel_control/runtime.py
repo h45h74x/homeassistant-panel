@@ -1,13 +1,19 @@
 """Per-device runtime state: declared capabilities, command queue, availability.
 
-No Home Assistant imports. The enabled set lives in `self.enabled`: it is seeded
-from `enabled_default` on `apply_hello`/`restore` and overwritten by the set the
-caller passes to `config()` / `apply_state()`; `queue_command` checks it.
+No Home Assistant imports. The enabled set lives in `self.enabled` and is set
+only via `set_enabled()` (the integration calls it at setup and on every registry
+change). `enabled_default` seeds it on hello/restore only until the first
+explicit `set_enabled`. The `enabled` argument of `config()` / `apply_state()` is
+used only to compute their result and never changes the runtime's set.
+
+Commands are fire-once: `take_commands()` removes them, unacked ones are not
+redelivered. A command is delivered while now - issued_at <= 300 s (300 ok, 301 expired).
 """
 from __future__ import annotations
 
 import asyncio
 import json
+import math
 import time
 import zlib
 from pathlib import Path
@@ -28,6 +34,7 @@ class DeviceRuntime:
         self._now = now
         self.declared: dict[str, dict] = {}
         self.enabled: set[str] = set()
+        self._explicit = False
         self.needs_hello = False
         self.last_contact: float | None = None
         self.last_acks: list[dict] = []
@@ -40,8 +47,14 @@ class DeviceRuntime:
             if c["id"] not in CATALOG:
                 raise ValueError(f"unknown capability {c['id']}")
         self.declared = {c["id"]: c for c in caps}
-        self.enabled = {i for i in self.declared if self._default(i)}
+        if not self._explicit:
+            self.enabled = {i for i in self.declared if self._default(i)}
         self._queue = {k: v for k, v in self._queue.items() if k in self.declared}
+
+    def set_enabled(self, enabled: set[str]) -> None:
+        self.enabled = set(enabled)
+        self._explicit = True
+        self._queue = {k: v for k, v in self._queue.items() if k in self.enabled}
 
     def restore(self, declared: list[dict]) -> None:
         self._declare(declared)
@@ -62,7 +75,6 @@ class DeviceRuntime:
         return int(round(device_time - self._now()))
 
     def config(self, enabled: set[str]) -> dict:
-        self.enabled = set(enabled)
         ids = sorted(i for i in enabled if i in self.declared)
         intervals = {}
         for i in ids:
@@ -76,11 +88,8 @@ class DeviceRuntime:
         return {"config_rev": zlib.crc32(body.encode()), "enabled": ids, "interval_s": intervals}
 
     def apply_state(self, state: dict, enabled: set[str]) -> dict[str, Any]:
-        self.enabled = set(enabled)
         self.touch()
         self.last_acks = list(state.get("acks", []))
-        acked = {a["id"] for a in self.last_acks}
-        self._queue = {k: v for k, v in self._queue.items() if v["id"] not in acked}
         ok = lambda i: i in self.declared and i in enabled  # noqa: E731
         out = {i: v for i, v in state.get("values", {}).items()
                if ok(i) and i != "clock_offset" and CATALOG[i]["access"] != "w"}
@@ -103,7 +112,7 @@ class DeviceRuntime:
             if not isinstance(value, bool):
                 raise ValueError("boolean expected")
         elif t == "number":
-            if isinstance(value, bool) or not isinstance(value, (int, float)) or value != value:
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
                 raise ValueError("number expected")
             decl = self.declared[capability]
             lo = max(x for x in (cat["min"], decl.get("min")) if x is not None) if (
