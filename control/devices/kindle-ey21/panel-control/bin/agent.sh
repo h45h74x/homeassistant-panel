@@ -38,7 +38,7 @@ _why=$(cat "$PANEL_STATUS.err" 2>/dev/null); rm -f "$PANEL_STATUS.err"
 rm -f "$PANEL_TMP"/*
 trap 'rm -f "$PANEL_TMP"/*; rmdir "$PANEL_TMP" 2>/dev/null' EXIT
 # token goes via a 0600 curl config file so it never shows up in `ps`
-( umask 077; printf 'header = "Authorization: Bearer %s"\n' "$CFG_TOKEN" > "$PANEL_TMP/curl.cfg" )
+( umask 077; printf 'header = "Authorization: Bearer %s"\n' "$(printf '%s' "$CFG_TOKEN" | sed 's/\\/\\\\/g; s/"/\\"/g')" > "$PANEL_TMP/curl.cfg" )
 
 safe_id() { case "$1" in ''|*[!a-z_]*) return 1 ;; esac; }
 

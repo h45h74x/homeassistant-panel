@@ -40,7 +40,7 @@ _bright_pct() { # lipc 0..24 -> percent
 
 dev_identity() {
   _cpu=$(grep -c 'MX50 YOSHIME' "$(_proc)/cpuinfo" 2>/dev/null)
-  _h=$(hostname 2>/dev/null | tr -d '[:cntrl:]' | cut -c1-200)
+  _h=$(hostname 2>/dev/null | sed 's/[[:cntrl:]]//g' | cut -c1-200)
   printf 'name=%s\nmanufacturer=Amazon\n' "${_h:-Kindle}"
   if [ "${_cpu:-0}" -gt 0 ]; then printf 'model=Kindle Paperwhite 1 (EY21)\n'; else printf 'model=Unknown Kindle\n'; fi
   _sw=$(sed -n 's/^System Software Version:[[:space:]]*//p' "$(_etc)/version.txt" 2>/dev/null | head -n 1 \
@@ -112,7 +112,7 @@ dev_get() {
     mac_address) _file1 "$(_sys)/class/net/wlan0/address" ;;
     ssid)
       _v=$(lipc-get-prop com.lab126.wifid 711 2>/dev/null | sed -n 's/.*AP:[[:space:]]*//p' | head -n 1 \
-        | sed 's/[[:space:]]*([^()]*)[[:space:]]*$//' | tr -d '[:cntrl:]')
+        | sed 's/[[:space:]]*([^()]*)[[:space:]]*$//' | sed 's/[[:cntrl:]]//g')
       [ -n "$_v" ] || return 1; printf '%s' "$_v" ;;
     kernel_version) _v=$(uname -r 2>/dev/null) || return 1; [ -n "$_v" ] || return 1; printf '%s' "$_v" ;;
     *) return 1 ;;

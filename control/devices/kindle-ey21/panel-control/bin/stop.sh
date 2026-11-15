@@ -1,12 +1,19 @@
 #!/bin/sh
 . "$(dirname "$0")/launch-lib.sh"
-# descendants <pid>: /proc scan, BusyBox 1.17 may lack pkill -P
+# descendants <pid>: all children, grandchildren, ... without forks (BusyBox 1.17 may lack pkill -P).
+# One pass over /proc per tree level; /proc/<pid>/stat is "pid (name) S ppid ...", name may contain spaces.
 descendants() {
-  for _d in /proc/[0-9]*; do
-    _c=${_d#/proc/}
-    _pp=$(sed 's/^.*) [A-Za-z] \([0-9]*\) .*/\1/' "$_d/stat" 2>/dev/null)
-    if [ "$_pp" = "$1" ]; then echo "$_c"; descendants "$_c"; fi
+  _lvl=$1; _out=
+  while [ -n "$_lvl" ]; do
+    _next=
+    for _d in /proc/[0-9]*; do
+      { read -r _l < "$_d/stat"; } 2>/dev/null || continue
+      _l=${_l##*) }; set -- $_l
+      for _p in $_lvl; do [ "$2" = "$_p" ] && { _next="$_next ${_d#/proc/}"; break; }; done
+    done
+    _out="$_out$_next"; _lvl=$_next
   done
+  echo $_out
 }
 pid=$(agent_pid)
 if [ -n "$pid" ]; then

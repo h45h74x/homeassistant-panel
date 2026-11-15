@@ -28,6 +28,7 @@ is_agent() {
   kill -0 "$1" 2>/dev/null || return 1
   [ -r "/proc/$1/cmdline" ] || return 0
   # cmdline is NUL-separated and grep stops at the first NUL, so turn NULs into spaces first
+  # (single-char tr, no range/class; to be verified on the device in Task 5)
   tr '\000' ' ' < "/proc/$1/cmdline" | grep -q 'agent\.sh'
 }
 agent_pid() { # prints the pid if the agent runs

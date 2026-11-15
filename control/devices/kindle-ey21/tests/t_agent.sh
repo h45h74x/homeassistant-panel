@@ -249,6 +249,13 @@ test_bad_clock_no_crash() {
   check alive alive
   stop_all
 }
+test_token_with_quote_and_backslash_exact() {
+  begin tokesc; mk "$(helloE 1 '"brightness"')"; start_mock
+  printf 'url = http://127.0.0.1:%s/api/panel_control/k/\ntoken = a"b\\c\n' "$PORT" > "$PANEL_CONFIG"
+  start_agent; wait_for '/hello ' 5
+  check token_exact grep -F -q 'auth=Bearer a"b\c body=' "$LOG"
+  stop_all
+}
 test_second_instance_is_not_this_task() { echo "SKIP second_instance (launcher, Task 4)"; }
 
 for t in hello_then_state hello_body_has_catalog_ids_only_and_no_warmth state_only_enabled_ids \
@@ -256,7 +263,7 @@ for t in hello_then_state hello_body_has_catalog_ids_only_and_no_warmth state_on
   undeclared_command_acked_not_ok dev_get_failure_sends_null config_rev_change_fetches_config \
   409_triggers_new_hello html_error_body_backoff_no_crash unreachable_server_backoff 401_sets_error_status \
   command_forces_reread command_with_new_config_rev_not_lost no_tight_loop_on_junk_200 409_always_not_tight \
-  clock_jump_back_does_not_stall bad_clock_no_crash bad_config_exit_2 429_waits poll_wait_never_zero serial_only_with_opt_in crlf_config second_instance_is_not_this_task; do
+  token_with_quote_and_backslash_exact clock_jump_back_does_not_stall bad_clock_no_crash bad_config_exit_2 429_waits poll_wait_never_zero serial_only_with_opt_in crlf_config second_instance_is_not_this_task; do
   "test_$t"
 done
 check no_schema_errors sh -c "! grep -r -e '-ERROR' $T --include=log"

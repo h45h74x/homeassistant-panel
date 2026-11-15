@@ -1,0 +1,13 @@
+#!/bin/sh
+# Emulates BusyBox 1.17 tr without ranges/classes: `tr -d SET` deletes the literal characters of SET
+# (only \NNN octal and \n \r \t escapes are expanded); `[:class:]` and `a-b` are NOT special.
+# Anything else goes to the real tr.
+if [ "$1" = -d ] && [ $# -eq 2 ]; then
+  exec python3 -c '
+import re,sys
+s=sys.argv[1]
+s=re.sub(r"\\([0-7]{1,3})",lambda m:chr(int(m.group(1),8)),s).replace("\\n","\n").replace("\\r","\r").replace("\\t","\t")
+d=sys.stdin.buffer.read()
+sys.stdout.buffer.write(bytes(b for b in d if chr(b) not in s))' "$2"
+fi
+exec /usr/bin/tr "$@"

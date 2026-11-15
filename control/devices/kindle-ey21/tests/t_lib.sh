@@ -2,6 +2,7 @@
 here=$(cd "$(dirname "$0")" && pwd)
 FIX="$here/../../../contract/fixtures/valid"
 . "$here/../panel-control/bin/lib.sh" || exit 1
+PATH="$here/stubs/busybox-tr:$PATH"   # tr without ranges/classes, like BusyBox 1.17
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 FAILS=0; N=0
 assert_eq() { N=$((N+1)); if [ "$2" != "$3" ]; then FAILS=$((FAILS+1)); printf 'FAIL %s\n  expected: [%s]\n  actual:   [%s]\n' "$1" "$2" "$3"; fi; }
@@ -13,6 +14,12 @@ tab=$(printf '\t')
 assert_eq json_str_ws '"ab"' "$(json_str "a${tab}b$nl")"
 assert_eq json_str_ctl '"ab"' "$(json_str "$(printf 'a\001\177b')")"
 assert_eq json_str_order '"\\\""' "$(json_str '\"')"
+assert_eq json_str_hyphen '"a-b"' "$(json_str 'a-b')"
+assert_eq json_str_hyphens '"x-y_z.1-2"' "$(json_str 'x-y_z.1-2')"
+assert_eq json_str_ctl_all '"ab"' "$(json_str "$(printf 'a\001\037\177\tb')")"
+assert_eq json_str_multiline '"ab"' "$(json_str "a${nl}b")"
+assert_eq json_str_oneline 0 "$(json_str "a${nl}b${nl}c" | wc -l | tr -d ' ')"
+assert_eq json_str_esc_ctl '"a\\\"b"' "$(json_str "$(printf 'a\001\\"\177b')")"
 assert_eq val_nl '"5abc"' "$(json_val "5${nl}abc")"
 for v in 0 -0 0.5 -12 1.5 40.5; do assert_eq "val_num_$v" "$v" "$(json_val $v)"; done
 for v in 007 +5 .5 5. 1e3 0x10 -; do assert_eq "val_str_$v" "\"$v\"" "$(json_val $v)"; done

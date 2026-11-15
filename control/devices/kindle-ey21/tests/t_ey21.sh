@@ -11,7 +11,7 @@ trap cleanup EXIT
 ok() { N=$((N+1)); [ "$2" = "$3" ] || { FAILS=$((FAILS+1)); echo "FAIL $1: expected [$2] got [$3]"; }; }
 yes_() { N=$((N+1)); _n=$1; shift; "$@" >/dev/null 2>&1 || { FAILS=$((FAILS+1)); echo "FAIL $_n"; }; }
 no_() { N=$((N+1)); _n=$1; shift; if "$@" >/dev/null 2>&1; then FAILS=$((FAILS+1)); echo "FAIL $_n (expected failure)"; fi; }
-BASEPATH=$PATH
+BASEPATH="$here/stubs/busybox-tr:$PATH"   # tr without ranges/classes, like BusyBox 1.17
 fx() { # fresh fixture copy + env for a test
   rm -rf "${T:?}/fx" "${T:?}/tmp"; cp -r "$here/fixtures" "$T/fx"; : > "$T/log"; mkdir -p "$T/tmp"
   export PROC_ROOT="$T/fx/proc" SYS_ROOT="$T/fx/sys" ETC_ROOT="$T/fx/etc" EIPS="$here/stubs/bin/eips" \
@@ -85,6 +85,10 @@ test_identity_model_and_version() {
   yes_ i_sw has "$_i" 'sw_version=5.3.7'; yes_ i_name has "$_i" 'name=kindle-wall'
   yes_ i_mfr has "$_i" 'manufacturer=Amazon'; yes_ i_mac has "$_i" 'mac=aa:bb:cc:dd:ee:ff'
   no_ i_hw has "$_i" 'hw_version.*'
+  STUB_HOSTNAME=kitchen-kindle-rtl; export STUB_HOSTNAME; yes_ i_host_letters has "$(dev_identity)" 'name=kitchen-kindle-rtl$'
+  STUB_HOSTNAME=$(printf 'ab\001c'); yes_ i_host_ctl has "$(dev_identity)" 'name=abc$'
+  printf 'AP: Net-Trl (x)\n' > "$STUB_LIPC/com.lab126.wifid.711"; ok ssid_letters Net-Trl "$(get ssid)"
+  printf 'AP: Ne\001t\n' > "$STUB_LIPC/com.lab126.wifid.711"; ok ssid_ctl Net "$(get ssid)"
   STUB_HOSTNAME=; export STUB_HOSTNAME; yes_ i_fallback has "$(dev_identity)" 'name=Kindle'
 }
 test_serial_only_when_opted_in() {

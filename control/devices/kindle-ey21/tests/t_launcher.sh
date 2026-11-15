@@ -156,6 +156,23 @@ ok is_agent_true_for_real_agent isag $real
 ok is_agent_false_for_unrelated sh -c "! sh -c '. \"\$1/launch-lib.sh\"; is_agent \"\$2\"' sh '$BIN' $other"
 kill $real $other 2>/dev/null
 
+# stop kills a two-level process tree quickly
+begin t15
+cat > "$D/bin/agent.sh" <<'EOT'
+#!/bin/sh
+sleep 4242 &
+sh -c 'sleep 4243 & wait' &
+sh -c 'sh -c "sleep 4244" & wait' &
+mkdir -p "$PANEL_TMP"; printf 'state=running\nlast_contact=%s\n' "$(date +%s)" > "$PANEL_STATUS"
+while :; do sleep 1; done
+EOT
+sh "$BIN/start.sh" >/dev/null; sleep 1
+ok tree_exists_before eq "$(pgrep -f '^sleep 424' | wc -l)" 3
+t0=$(date +%s); sh "$BIN/stop.sh" >/dev/null; t1=$(date +%s)
+ok tree_all_killed eq "$(pgrep -f '^sleep 424' | wc -l)" 0
+ok stop_fast test $((t1-t0)) -lt 3
+ok tree_agent_gone eq "$(nagents)" 0
+
 # stale rows are blanked, long messages wrap
 begin t13
 sh "$BIN/start.sh" >/dev/null

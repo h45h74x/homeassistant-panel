@@ -2,7 +2,7 @@
 # Contract: control/contract/README.md ("Parsing commands without jq").
 
 json_str() {
-  printf '"%s"' "$(printf '%s' "$1" | tr -d '\001-\037\177' | sed 's/\\/\\\\/g; s/"/\\"/g')"
+  printf '"%s"' "$(printf '%s' "$1" | sed 's/[[:cntrl:]]//g; s/\\/\\\\/g; s/"/\\"/g' | tr -d '\n')"
 }
 
 # shortcut: a numeric-looking text value (e.g. "3") is sent as a number, upgrade if a text capability needs it.

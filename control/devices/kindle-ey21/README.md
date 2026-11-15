@@ -18,6 +18,10 @@ Then copy `config.sample` to `config` (same folder) and fill in `url` and `token
 
 KUAL, menu "Panel Control": Start, Stop, Status, Show config (shows url and token in plain text). Results appear as a one-line message on the screen.
 
+Show config draws the passphrase on the e-ink panel; it stays visible until the screen is redrawn and survives sleep and power-off, so redraw the screen afterwards.
+
+`https://` URLs with self-signed certificates fail (curl rc 60): use the plain `http://` LAN URL. IPv6 literal addresses are untested.
+
 The agent does not start on boot: start it from KUAL after every reboot.
 
 ## Status states
