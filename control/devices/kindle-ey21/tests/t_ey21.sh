@@ -131,6 +131,12 @@ test_display_sanitizes_lines() {
   dev_display "$_l" a b
   ok disp_trunc46 "[-q][-p][-y][-3][$(printf '%s' "$_l" | cut -c1-46)]" "$(sed -n 1p "$T/fb.log")"
 }
+test_display_dash_line_never_option() {
+  fx; fbstub; dev_display "-abc" "--help" "-"
+  ok disp_dash "[-q][-p][-y][-3][ -abc]
+[-q][-p][-y][-2][ --help]
+[-q][-p][-y][-1][ -]" "$(cat "$T/fb.log")"
+}
 test_display_clear_blanks_three_rows() {
   fx; fbstub; dev_display_clear
   ok disp_clear "[-q][-p][-y][-3][ ]
@@ -151,7 +157,7 @@ for t in brightness_get_rounds brightness_set battery_and_charging power_state_m
   wifi_signal_percent kernel_version ip_and_mac_parse cpu_usage_first_null_then_percent unknown_id_returns_1 \
   capabilities_exclude_warmth_and_battery_temperature capabilities_flags identity_model_and_version serial_only_when_opted_in \
   refuses_non_ey21 missing_files_return_1 sensitive_values_not_in_stderr \
-  display_draws_bottom_three_rows display_sanitizes_lines display_clear_blanks_three_rows display_without_fbink_is_silent; do "test_$t"; done
+  display_draws_bottom_three_rows display_sanitizes_lines display_dash_line_never_option display_clear_blanks_three_rows display_without_fbink_is_silent; do "test_$t"; done
 
 # ---- integration: real agent.sh + real ey21.sh + stubs against mock_ha.py
 fx

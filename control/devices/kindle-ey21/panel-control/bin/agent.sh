@@ -29,6 +29,34 @@ agent_version=$AGENT_VERSION"
       && mv "$PANEL_STATUS.tmp" "$PANEL_STATUS" 2>/dev/null
     ST_WRITTEN=$_s; ST_WLC=${LAST_CONTACT:-0}
   fi
+  display_tick
+}
+# ---- on-screen status: only when the layer has dev_display AND the flag file exists. Redraw only when
+# state or the last two log lines changed and at least DISP_MIN s passed; the clock is refreshed only on a redraw.
+case "$DISP_MIN" in ''|*[!0-9]*|0*) DISP_MIN=20 ;; esac
+CONTACT_HMS=; DISP_ON=0; DISP_SIG=; DISP_LAST=0; HAVE_DISP=0; LOG_SZ=; LOG1=; LOG2=
+display_tick() {
+  [ $HAVE_DISP = 1 ] || return 0
+  if [ ! -f "$PANEL_DISPLAY_FLAG" ]; then
+    [ $DISP_ON = 0 ] || { DISP_ON=0; DISP_SIG=; dev_display_clear >/dev/null 2>&1; }
+    return 0
+  fi
+  DISP_ON=1
+  _sz=$(wc -c < "$PANEL_LOG" 2>/dev/null)
+  [ "$_sz" = "$LOG_SZ" ] || { LOG_SZ=$_sz; log_last2; }   # log unchanged: skip the forks
+  _sig="$ST_STATE|$LOG1|$LOG2"
+  [ "$_sig" != "$DISP_SIG" ] || return 0
+  _dn=$(date +%s)
+  if [ "$_dn" -ge "$DISP_LAST" ] 2>/dev/null && [ $((_dn-DISP_LAST)) -lt "$DISP_MIN" ]; then return 0; fi
+  DISP_SIG=$_sig; DISP_LAST=$_dn
+  dev_display "Panel Control: $ST_STATE ${CONTACT_HMS:-no contact yet}" "$LOG1" "$LOG2" >/dev/null 2>&1
+  return 0
+}
+# nap <s>: sleep; while the display is on, wake each second so a redraw deferred by DISP_MIN is not stuck behind a long wait
+nap() {
+  if [ $HAVE_DISP = 1 ] && [ -f "$PANEL_DISPLAY_FLAG" ]; then
+    _nn=$1; while [ "$_nn" -gt 0 ]; do sleep 1; _nn=$((_nn-1)); display_tick; done
+  else sleep "$1"; fi
 }
 # ---- event log in RAM: "HH:MM:SS message", never secrets; bounded (over 60 lines keeps the last 40)
 plog() {
@@ -43,11 +71,15 @@ LASTFAIL=
 flog() { [ "$1" = "$LASTFAIL" ] || { LASTFAIL=$1; plog "$1"; }; }   # a failure streak logs once per distinct message
 die() { set_status error "$1"; exit 2; }
 
+# layer first (functions only), so that die() can already draw the error state
+if [ -r "$DEVICE_LAYER" ]; then
+  . "$DEVICE_LAYER"
+  if type dev_display >/dev/null 2>&1; then HAVE_DISP=1; fi
+fi
 load_config "$PANEL_CONFIG" > "$PANEL_STATUS.err" 2>&1; _rc=$?   # not in $(): it sets CFG_* globals
 _why=$(cat "$PANEL_STATUS.err" 2>/dev/null); rm -f "$PANEL_STATUS.err"
 [ $_rc = 0 ] || die "${_why:-bad config}"
 [ -r "$DEVICE_LAYER" ] || die "device layer missing"
-. "$DEVICE_LAYER"
 
 # single instance owns this dir (launcher enforces that); holds only the curl config and scratch files
 (umask 077; mkdir -p "$PANEL_TMP") || die "cannot create tmp dir"
@@ -82,9 +114,9 @@ chk() {
     200) BO=$BO_BASE; _d=$(date '+%s %H:%M:%S'); LAST_CONTACT=${_d% *}; CONTACT_HMS=${_d#* }
          [ -z "$LASTFAIL" ] || { LASTFAIL=; plog online; }
          set_status running ""; return 0 ;;
-    409) plog "409 re-hello"; NEED_HELLO=1; sleep "$B409"; B409=$((B409*2)); [ $B409 -le 120 ] || B409=120; return 1 ;;
-    401) flog "unauthorized (check token)"; set_status error "unauthorized (check token)"; sleep "$AUTH_WAIT"; return 1 ;;
-    429) flog "locked out, wait ${LOCKOUT_WAIT}s"; set_status backoff "locked out"; sleep "$LOCKOUT_WAIT"; return 1 ;;
+    409) plog "409 re-hello"; NEED_HELLO=1; nap "$B409"; B409=$((B409*2)); [ $B409 -le 120 ] || B409=120; return 1 ;;
+    401) flog "unauthorized (check token)"; set_status error "unauthorized (check token)"; nap "$AUTH_WAIT"; return 1 ;;
+    429) flog "locked out, wait ${LOCKOUT_WAIT}s"; set_status backoff "locked out"; nap "$LOCKOUT_WAIT"; return 1 ;;
     000) fail_soft "curl error $CURL_RC" ;;
     *) fail_soft "http $HTTP_CODE" ;;
   esac
@@ -92,7 +124,7 @@ chk() {
 }
 fail_soft() { # <reason>: backoff, doubling to 120 s
   case "$1" in "curl error"*) flog "HA unreachable, retry in ${BO}s" ;; *) flog "$1, retry in ${BO}s" ;; esac
-  set_status backoff "$1"; sleep "$BO"; BO=$((BO*2)); [ $BO -le 120 ] || BO=120
+  set_status backoff "$1"; nap "$BO"; BO=$((BO*2)); [ $BO -le 120 ] || BO=120
 }
 
 # ---- device capabilities
@@ -242,7 +274,7 @@ apply_commands() { # <commands body>
       fi
     fi
     if [ -z "$_err" ]; then plog "cmd $_cap ok"; ACKS="$ACKS{\"id\":\"$_cid\",\"ok\":true},"
-    else plog "cmd $_cap FAILED: $_err"; ACKS="$ACKS{\"id\":\"$_cid\",\"ok\":false,\"error\":$(json_str "$_err")},"; fi
+    else _lc=$_cap; safe_id "$_lc" || _lc='?'; plog "cmd $_lc FAILED: $_err"; ACKS="$ACKS{\"id\":\"$_cid\",\"ok\":false,\"error\":$(json_str "$_err")},"; fi
   done <<EOF
 $_cmds
 EOF
@@ -262,27 +294,6 @@ poll_commands() {
     B409=1
     apply_commands "$_cb"; check_rev "$_cb"
   fi
-}
-
-# ---- on-screen status: only when the layer has dev_display AND the flag file exists. Redraw only when
-# state or the last two log lines changed and at least DISP_MIN s passed; the clock is refreshed only on a redraw.
-CONTACT_HMS=; DISP_ON=0; DISP_SIG=; DISP_LAST=0
-if type dev_display >/dev/null 2>&1; then HAVE_DISP=1; else HAVE_DISP=0; fi
-display_tick() {
-  [ $HAVE_DISP = 1 ] || return 0
-  if [ ! -f "$PANEL_DISPLAY_FLAG" ]; then
-    [ $DISP_ON = 0 ] || { DISP_ON=0; DISP_SIG=; dev_display_clear >/dev/null 2>&1; }
-    return 0
-  fi
-  DISP_ON=1
-  log_last2
-  _sig="$ST_STATE|$LOG1|$LOG2"
-  [ "$_sig" != "$DISP_SIG" ] || return 0
-  _dn=$(date +%s)
-  if [ "$_dn" -ge "$DISP_LAST" ] 2>/dev/null && [ $((_dn-DISP_LAST)) -lt "$DISP_MIN" ]; then return 0; fi
-  DISP_SIG=$_sig; DISP_LAST=$_dn
-  dev_display "Panel Control: $ST_STATE ${CONTACT_HMS:-no contact yet}" "$LOG1" "$LOG2" >/dev/null 2>&1
-  return 0
 }
 
 read_caps

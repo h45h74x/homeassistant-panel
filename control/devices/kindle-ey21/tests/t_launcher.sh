@@ -3,7 +3,7 @@
 here=$(cd "$(dirname "$0")" && pwd)
 PKG="$here/../panel-control"; BIN="$PKG/bin"
 T=$(mktemp -d); FAILS=0
-cleanup() { for p in $(cat "$T"/*/pid 2>/dev/null); do kill "$p" 2>/dev/null; done; pkill -f "$T/" 2>/dev/null; rm -rf "$T"; }
+cleanup() { rm -f "$PKG/display.on"; for p in $(cat "$T"/*/pid 2>/dev/null); do kill "$p" 2>/dev/null; done; pkill -f "$T/" 2>/dev/null; rm -rf "$T"; }
 trap cleanup EXIT
 ok() { _n=$1; shift; "$@" >/dev/null 2>&1 || { FAILS=$((FAILS+1)); echo "FAIL $_n"; [ -f "$D/eips.log" ] && sed 's/^/    eips: /' "$D/eips.log"; }; }
 has() { grep -q -e "$1" "$D/eips.log"; }
@@ -248,6 +248,26 @@ begin f6; fbstub
 sh -c '. "$1/launch-lib.sh"; say "$2"' sh "$BIN" '%s %d \n %%' >/dev/null
 ok fb_format_string_safe fbhas '[-y][-10][%s %d \n %%]'
 
+# option safety: no text argument handed to fbink may start with '-' (it would be parsed as an option)
+nodash() { ! fbtext < "$D/fbink.log" | grep -q '^-'; }
+begin g1; fbstub
+sh -c '. "$1/launch-lib.sh"; say "$2"' sh "$BIN" "$(printf 'x%.0s' $(seq 1 46))-abc" >/dev/null
+ok fb_wrap_boundary_dash_not_option nodash
+ok fb_wrap_boundary_dash_text_kept eq "$(fbrow -9)" ' -abc'
+begin g2; fbstub
+sh -c '. "$1/launch-lib.sh"; say "$2"' sh "$BIN" "$(printf 'x%.0s' $(seq 1 45))-abc-def" >/dev/null
+ok fb_wrap_45_dash_not_option nodash
+begin g3; fbstub
+sh -c '. "$1/launch-lib.sh"; say "url=$2"' sh "$BIN" "$(printf 'a%.0s' $(seq 1 42))-tail-more" >/dev/null
+ok fb_url_wrap_dash_not_option nodash
+ok fb_url_wrap_text_kept eq "$(fbrow -9)" ' -tail-more'
+begin g4; fbstub
+sh -c '. "$1/launch-lib.sh"; say "$2"' sh "$BIN" "$(printf 'Maple-Orbit-Tiger-Quilt-Ember-%.0s' 1 2 3 4 5)" >/dev/null
+ok fb_hyphen_passphrase_not_option nodash
+begin g5; fbstub
+sh -c '. "$1/launch-lib.sh"; say "-lonely"' sh "$BIN" >/dev/null
+ok fb_leading_dash_message_not_option nodash
+
 # ---- display toggle scripts and stop/start interplay (real device layer + fbink stub)
 begin d1; fbstub
 rm -f "$PANEL_STATUS"
@@ -256,9 +276,16 @@ ok on_rc eq $rc 0
 ok on_creates_flag test -f "$PANEL_DISPLAY_FLAG"
 ok on_silent test ! -s "$D/out"
 ok on_not_running_line fbhas '[-q][-p][-y][-3][Panel Control: not running]'
+: > "$D/fbink.log"; printf 'state=running\nlast_contact=1\n' > "$PANEL_STATUS"
+sh "$BIN/display-on.sh" >/dev/null
+ok on_stale_status_without_agent_is_not_running fbhas '[-q][-p][-y][-3][Panel Control: not running]'
+rm -f "$PANEL_STATUS"; sh "$BIN/display-off.sh" >/dev/null
+sh "$BIN/display-on.sh" >/dev/null
 : > "$D/fbink.log"
+sh "$BIN/start.sh" >/dev/null
 printf '10:00:01 started\n10:00:02 hello ok (23 caps)\n10:00:03 cmd brightness ok\n' > "$PANEL_LOG"
 printf 'state=running\nlast_contact=1\nlast_error=\n' > "$PANEL_STATUS"
+: > "$D/fbink.log"
 sh "$BIN/display-on.sh" >/dev/null
 ok on_state_and_last_two_log_lines eq "$(cat "$D/fbink.log")" '[-q][-p][-y][-3][Panel Control: running]
 [-q][-p][-y][-2][10:00:02 hello ok (23 caps)]
@@ -267,6 +294,7 @@ ok on_state_and_last_two_log_lines eq "$(cat "$D/fbink.log")" '[-q][-p][-y][-3][
 printf '10:00:01 started\n' > "$PANEL_LOG"
 sh "$BIN/display-on.sh" >/dev/null
 ok on_single_log_line eq "$(sed -n 2,3p "$D/fbink.log" | tr -d '\n')" '[-q][-p][-y][-2][ ][-q][-p][-y][-1][10:00:01 started]'
+sh "$BIN/stop.sh" >/dev/null
 : > "$D/fbink.log"
 sh "$BIN/display-off.sh" > "$D/out" 2>&1; rc=$?
 ok off_rc eq $rc 0
@@ -275,6 +303,9 @@ ok off_silent test ! -s "$D/out"
 ok off_clears_three_rows eq "$(cat "$D/fbink.log")" '[-q][-p][-y][-3][ ]
 [-q][-p][-y][-2][ ]
 [-q][-p][-y][-1][ ]'
+: > "$D/fbink.log"
+sh "$BIN/display-off.sh" >/dev/null
+ok off_without_flag_does_not_draw test ! -s "$D/fbink.log"
 begin d2   # no fbink anywhere: still silent, flag still managed
 sh "$BIN/display-on.sh" > "$D/out" 2>&1; rc=$?
 ok on_nofbink_silent_rc0 sh -c "[ $rc = 0 ] && [ ! -s '$D/out' ] && [ -f '$PANEL_DISPLAY_FLAG' ]"

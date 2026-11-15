@@ -20,7 +20,7 @@ done
 ROW=0; SAY_INIT=
 if [ -n "$FBINK_BIN" ]; then
   SAY_W=46
-  say_row() { _t=$2; [ -n "$_t" ] || _t=' '; "$FBINK_BIN" -q -p -y $(($1-10)) "$_t" >/dev/null 2>&1; }
+  say_row() { _t=$2; [ -n "$_t" ] || _t=' '; case $_t in -*) _t=" $_t" ;; esac; "$FBINK_BIN" -q -p -y $(($1-10)) "$_t" >/dev/null 2>&1; }
 else
   SAY_W=60
   say_row() { "$EIPS_BIN" 0 "$1" "$(printf '%-60.60s' "$2")" >/dev/null 2>&1; }

@@ -311,24 +311,78 @@ test_event_log_bounded() {
 test_display_inert_without_flag() {
   begin disp_off; mk "$(helloE 1 '"brightness"')"; run; sleep 4
   check no_draw test ! -s "$FAKE_DIR/disp.log"
+  check alive_without_flag alive
   stop_all
 }
+wait_disp() { # <grep pattern in disp.log> <secs>
+  _i=0; while [ $_i -lt $(($2*10)) ]; do grep -q -e "$1" "$FAKE_DIR/disp.log" 2>/dev/null && return 0; sleep 0.1; _i=$((_i+1)); done; return 1; }
 test_display_draws_coalesces_and_clears() {
   begin disp_on; : > "$D/display.on"; export PANEL_DISPLAY_MIN=4
   mk "$(helloE 1 '"brightness"')"; run; wait_for '/hello ' 5; sleep 1
   check first_draw_only eq "$(disp_cnt)" 1
   check first_draw_line1 grep -q '^DRAW Panel Control: backoff no contact yet|' "$FAKE_DIR/disp.log"
-  sleep 5
-  check second_draw ge "$(disp_cnt)" 2
+  wait_disp '^DRAW Panel Control: running [0-9][0-9]:[0-9][0-9]:[0-9][0-9]|.* started|[0-9:]* hello ok (5 caps)$' 8
   check second_draw_running grep -q '^DRAW Panel Control: running [0-9][0-9]:[0-9][0-9]:[0-9][0-9]|.* started|[0-9:]* hello ok (5 caps)$' "$FAKE_DIR/disp.log"
-  _c=$(disp_cnt); sleep 5
-  check no_redraw_on_heartbeats eq "$(disp_cnt)" "$_c"
+  check exactly_two_draws eq "$(disp_cnt)" 2
+  sleep 6
+  check no_redraw_on_heartbeats eq "$(disp_cnt)" 2
   check no_secret_on_display sh -c "! grep -q -e Maple -e B0TESTSERIAL -e aa:bb '$FAKE_DIR/disp.log'"
-  rm -f "$D/display.on"; sleep 4
+  rm -f "$D/display.on"; wait_disp '^CLEAR' 6
   check cleared_once eq "$(grep -c '^CLEAR' "$FAKE_DIR/disp.log")" 1
   sleep 3
   check cleared_only_once eq "$(grep -c '^CLEAR' "$FAKE_DIR/disp.log")" 1
+  check alive_after_clear alive
   export PANEL_DISPLAY_MIN=1
+  stop_all
+}
+test_display_shows_error_state_immediately() {
+  # the 401 branch sleeps AUTH_WAIT (30 s here): the screen must not keep showing the old state meanwhile
+  begin disp_401; : > "$D/display.on"; export PANEL_DISPLAY_MIN=3
+  mk '{"status":401,"body":{"error":"unauthorized"}}'; run; sleep 1
+  check rate_limited_one_draw eq "$(disp_cnt)" 1
+  wait_disp '^DRAW Panel Control: error no contact yet|.*unauthorized (check token)$' 6
+  check error_drawn_long_before_auth_wait grep -q '^DRAW Panel Control: error no contact yet|.*unauthorized (check token)$' "$FAKE_DIR/disp.log"
+  check at_most_one_draw_per_min eq "$(disp_cnt)" 2
+  check alive_in_wait alive
+  export PANEL_DISPLAY_MIN=1
+  stop_all
+}
+test_display_shows_backoff_state() {
+  begin disp_502; : > "$D/display.on"
+  mk '{"status":502,"body":"x"}'; run
+  wait_disp '^DRAW Panel Control: backoff no contact yet|.*http 502, retry in' 8
+  check backoff_drawn grep -q '^DRAW Panel Control: backoff no contact yet|.*http 502, retry in' "$FAKE_DIR/disp.log"
+  stop_all
+}
+test_display_shows_error_on_bad_config() {
+  begin disp_badcfg; : > "$D/display.on"; printf 'url = http://x\n' > "$PANEL_CONFIG"
+  sh "$AGENT" >"$D/agent.out" 2>&1; rc=$?
+  check exit2_with_display eq "$rc" 2
+  check bad_config_error_drawn eq "$(grep -c '^DRAW Panel Control: error ' "$FAKE_DIR/disp.log")" 1
+}
+test_display_min_invalid_uses_default() {
+  begin disp_minbad; : > "$D/display.on"; export PANEL_DISPLAY_MIN=abc
+  mk "$(helloE 1 '"brightness"')"; run; wait_for '/state ' 6; sleep 3
+  check invalid_min_coalesces eq "$(disp_cnt)" 1
+  check alive alive
+  export PANEL_DISPLAY_MIN=1
+  stop_all
+}
+test_display_survives_clock_jump_back() {
+  begin disp_clock; : > "$D/display.on"; mk "$(helloE 1 '"brightness"')"; mk_date_stub back; run_stub; sleep 6
+  _i=0; while [ $_i -lt 4 ]; do _i=$((_i+1)); echo "00:00:0$_i tst$_i" >> "$PANEL_LOG"; sleep 2; done
+  check redraw_after_jump wait_disp 'tst[34]' 6
+  stop_all
+}
+test_event_log_exact_bounds() {
+  # hello is delayed so the log can be inspected at exactly 60 lines (59 seeded + started), then it becomes 61 and is trimmed
+  begin evexact; _i=0; while [ $_i -lt 59 ]; do echo "00:00:00 old $_i" >> "$PANEL_LOG"; _i=$((_i+1)); done
+  mk '{"status":200,"delay":3,"body":'"$(H 1 '"brightness"' '')"'}'; run; sleep 1
+  check sixty_not_rotated eq "$(wc -l < "$PANEL_LOG" | tr -d ' ')" 60
+  check sixty_keeps_head plog_has 'old 0$'
+  wait_for '/state ' 8; sleep 1
+  check sixtyone_rotated ge 42 "$(wc -l < "$PANEL_LOG" | tr -d ' ')"
+  check sixtyone_head_gone plog_hasnt 'old 0$'
   stop_all
 }
 for t in hello_then_state hello_body_has_catalog_ids_only_and_no_warmth state_only_enabled_ids \
@@ -338,7 +392,9 @@ for t in hello_then_state hello_body_has_catalog_ids_only_and_no_warmth state_on
   command_forces_reread command_with_new_config_rev_not_lost no_tight_loop_on_junk_200 409_always_not_tight \
   token_with_quote_and_backslash_exact clock_jump_back_does_not_stall bad_clock_no_crash bad_config_exit_2 429_waits poll_wait_never_zero serial_only_with_opt_in crlf_config second_instance_is_not_this_task \
   event_log_content event_log_failure_then_online event_log_unreachable_401_429_409 event_log_bounded \
-  display_inert_without_flag display_draws_coalesces_and_clears; do
+  display_inert_without_flag display_draws_coalesces_and_clears display_shows_error_state_immediately \
+  display_shows_backoff_state display_shows_error_on_bad_config display_min_invalid_uses_default \
+  display_survives_clock_jump_back event_log_exact_bounds; do
   "test_$t"
 done
 check no_schema_errors sh -c "! grep -r -e '-ERROR' $T --include=log"

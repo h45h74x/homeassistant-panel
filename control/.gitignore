@@ -1,2 +1,6 @@
 __pycache__/
 .pytest_cache/
+.venv/
+dist/
+.dev-ha/
+devices/kindle-ey21/panel-control/display.on

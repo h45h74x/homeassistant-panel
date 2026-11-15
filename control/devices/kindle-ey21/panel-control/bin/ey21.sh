@@ -142,7 +142,8 @@ _fbink() { # prints the first executable fbink
 }
 _dline() { # printable ASCII only, one line, max 46 chars, never empty
   _o=$(printf '%s' "$1" | tr '\n' ' ' | sed 's/[[:cntrl:]]//g' | LC_ALL=C sed 's/[^ -~]//g' | cut -c1-46)
-  printf '%s' "${_o:- }"
+  _o=${_o:- }; case $_o in -*) _o=" $_o" ;; esac   # a leading '-' would be parsed as an fbink option
+  printf '%s' "$_o"
 }
 dev_display() { # <line1> <line2> <line3>
   _fb=$(_fbink) || return 1
