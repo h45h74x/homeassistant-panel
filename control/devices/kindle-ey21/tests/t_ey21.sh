@@ -32,6 +32,14 @@ test_brightness_set() {
   fx; dev_set brightness -5 >/dev/null; ok setneg "lipc-set-prop com.lab126.powerd flIntensity 0" "$(cat "$STUB_LOG")"
   fx; _m=$(dev_set brightness abc); _rc=$?; yes_ setabc_rc test $_rc -ne 0; ok setabc_nocall "" "$(cat "$STUB_LOG")"; yes_ setabc_reason test -n "$_m"
 }
+test_brightness_min_level() {
+  for p in 1 2 3 4; do fx; dev_set brightness $p >/dev/null; ok "set$p" "lipc-set-prop com.lab126.powerd flIntensity 1" "$(cat "$STUB_LOG")"; done
+  fx; dev_set brightness 0 >/dev/null; ok set0 "lipc-set-prop com.lab126.powerd flIntensity 0" "$(cat "$STUB_LOG")"
+  fx; dev_set brightness 100 >/dev/null; ok set100 "lipc-set-prop com.lab126.powerd flIntensity 24" "$(cat "$STUB_LOG")"
+  fx; for p in $(seq 1 100); do dev_set brightness $p >/dev/null; done
+  ok mono_ok yes "$(awk '{if ($NF==0) bad=1; if (NR>1 && $NF<prev) bad=1; prev=$NF} END{print bad?"no":"yes"}' "$STUB_LOG")"
+  ok mono_n 100 "$(wc -l < "$STUB_LOG" | tr -d ' ')"
+}
 test_battery_and_charging() { fx; ok batt 88 "$(get battery_level)"; ok chg0 false "$(get charging)"; lp isCharging 1; ok chg1 true "$(get charging)"; }
 test_power_state_mapping() {
   fx; for p in "active:active" "screenSaver:screensaver" "readyToSuspend:screensaver"; do lp state "${p%%:*}"; ok "ps_${p%%:*}" "${p##*:}" "$(get power_state)"; done
@@ -163,7 +171,7 @@ test_display_without_fbink_is_silent() {
   unset FBINK
 }
 
-for t in brightness_get_rounds brightness_set battery_and_charging power_state_mapping frontlight_on keep_awake_get_set refresh_screen_set sleep_set \
+for t in brightness_get_rounds brightness_set brightness_min_level battery_and_charging power_state_mapping frontlight_on keep_awake_get_set refresh_screen_set sleep_set \
   cpu_load memory_free_bytes memory_total_bytes storage_bytes_from_df rootfs_used_percent uptime battery_voltage_volts battery_current_ma \
   wifi_signal_percent kernel_version ip_and_mac_parse cpu_usage_first_null_then_percent unknown_id_returns_1 \
   capabilities_exclude_warmth_and_battery_temperature capabilities_flags identity_model_and_version serial_only_when_opted_in \

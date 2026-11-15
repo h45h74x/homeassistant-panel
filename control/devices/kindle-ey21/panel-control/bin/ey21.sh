@@ -124,7 +124,8 @@ dev_set() {
     brightness)
       _isint "$2" || { echo "brightness needs a number"; return 1; }
       _v=$2; [ "$_v" -ge 0 ] || _v=0; [ "$_v" -le 100 ] || _v=100
-      lipc-set-prop com.lab126.powerd flIntensity $(( (_v * 24 + 50) / 100 )) >/dev/null 2>&1 || { echo "lipc write failed"; return 1; } ;;
+      _n=$(( (_v * 24 + 50) / 100 )); [ "$_n" -eq 0 ] && [ "$_v" -gt 0 ] && _n=1 # 25 levels: any request above 0 stays on
+      lipc-set-prop com.lab126.powerd flIntensity $_n >/dev/null 2>&1 || { echo "lipc write failed"; return 1; } ;;
     keep_awake)
       case "$2" in true) _v=1 ;; false) _v=0 ;; *) echo "keep_awake needs true/false"; return 1 ;; esac
       lipc-set-prop com.lab126.powerd preventScreenSaver "$_v" >/dev/null 2>&1 || { echo "lipc write failed"; return 1; } ;;
