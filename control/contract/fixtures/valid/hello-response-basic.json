@@ -1,0 +1,1 @@
+{"contract":1,"heartbeat_s":60,"poll_wait_s":25,"config":{"config_rev":1,"enabled":["brightness","battery_level"],"interval_s":{"battery_level":60}}}

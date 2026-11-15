@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "state-response",
+  "type": "object",
+  "properties": {
+    "config_rev": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "config_rev"
+  ],
+  "additionalProperties": false
+}

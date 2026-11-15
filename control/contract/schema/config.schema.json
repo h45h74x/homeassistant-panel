@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "config",
+  "type": "object",
+  "properties": {
+    "config_rev": {
+      "type": "integer"
+    },
+    "enabled": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "brightness",
+          "warmth",
+          "keep_awake",
+          "refresh_screen",
+          "battery_level",
+          "charging",
+          "frontlight_on",
+          "power_state",
+          "cpu_usage",
+          "cpu_load",
+          "memory_total",
+          "memory_free",
+          "storage_total",
+          "storage_free",
+          "rootfs_used_percent",
+          "clock_offset",
+          "uptime",
+          "battery_temperature",
+          "battery_voltage",
+          "battery_current",
+          "wifi_signal",
+          "ip_address",
+          "ssid",
+          "mac_address",
+          "kernel_version"
+        ]
+      }
+    },
+    "interval_s": {
+      "type": "object",
+      "propertyNames": {
+        "enum": [
+          "brightness",
+          "warmth",
+          "keep_awake",
+          "refresh_screen",
+          "battery_level",
+          "charging",
+          "frontlight_on",
+          "power_state",
+          "cpu_usage",
+          "cpu_load",
+          "memory_total",
+          "memory_free",
+          "storage_total",
+          "storage_free",
+          "rootfs_used_percent",
+          "clock_offset",
+          "uptime",
+          "battery_temperature",
+          "battery_voltage",
+          "battery_current",
+          "wifi_signal",
+          "ip_address",
+          "ssid",
+          "mac_address",
+          "kernel_version"
+        ]
+      },
+      "additionalProperties": {
+        "type": "integer"
+      }
+    }
+  },
+  "required": [
+    "config_rev",
+    "enabled",
+    "interval_s"
+  ],
+  "additionalProperties": false
+}

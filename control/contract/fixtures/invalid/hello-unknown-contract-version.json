@@ -1,0 +1,83 @@
+{
+  "contract": 2,
+  "agent_version": "0.1.0",
+  "device": {
+    "name": "Kindle",
+    "manufacturer": "Amazon",
+    "model": "EY21",
+    "sw_version": "5.16.2"
+  },
+  "capabilities": [
+    {
+      "id": "brightness",
+      "min": 0,
+      "max": 100
+    },
+    {
+      "id": "keep_awake"
+    },
+    {
+      "id": "refresh_screen"
+    },
+    {
+      "id": "battery_level"
+    },
+    {
+      "id": "charging"
+    },
+    {
+      "id": "frontlight_on"
+    },
+    {
+      "id": "power_state"
+    },
+    {
+      "id": "cpu_usage"
+    },
+    {
+      "id": "cpu_load"
+    },
+    {
+      "id": "memory_total"
+    },
+    {
+      "id": "memory_free"
+    },
+    {
+      "id": "storage_total"
+    },
+    {
+      "id": "storage_free"
+    },
+    {
+      "id": "rootfs_used_percent"
+    },
+    {
+      "id": "clock_offset"
+    },
+    {
+      "id": "uptime"
+    },
+    {
+      "id": "battery_voltage"
+    },
+    {
+      "id": "battery_current"
+    },
+    {
+      "id": "wifi_signal"
+    },
+    {
+      "id": "ip_address"
+    },
+    {
+      "id": "ssid"
+    },
+    {
+      "id": "mac_address"
+    },
+    {
+      "id": "kernel_version"
+    }
+  ]
+}

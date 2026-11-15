@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "error",
+  "type": "object",
+  "properties": {
+    "error": {
+      "enum": [
+        "unauthorized",
+        "unknown_device",
+        "hello_required",
+        "invalid_payload",
+        "unsupported_contract",
+        "locked_out"
+      ]
+    },
+    "detail": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "error"
+  ],
+  "additionalProperties": false
+}

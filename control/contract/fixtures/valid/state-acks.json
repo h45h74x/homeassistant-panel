@@ -1,0 +1,17 @@
+{
+  "time": 1763200000,
+  "values": {
+    "battery_level": 80
+  },
+  "acks": [
+    {
+      "id": "c1",
+      "ok": true
+    },
+    {
+      "id": "c2",
+      "ok": false,
+      "error": "write failed"
+    }
+  ]
+}

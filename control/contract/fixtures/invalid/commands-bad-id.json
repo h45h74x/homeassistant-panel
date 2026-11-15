@@ -1,0 +1,11 @@
+{
+  "config_rev": 1,
+  "commands": [
+    {
+      "id": "C-1",
+      "capability": "brightness",
+      "value": 40,
+      "issued_at": 1
+    }
+  ]
+}

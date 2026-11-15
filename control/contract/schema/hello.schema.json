@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "hello",
+  "type": "object",
+  "properties": {
+    "contract": {
+      "const": 1
+    },
+    "agent_version": {
+      "type": "string"
+    },
+    "device": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "manufacturer": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "sw_version": {
+          "type": "string"
+        },
+        "hw_version": {
+          "type": "string"
+        },
+        "mac": {
+          "type": "string"
+        },
+        "serial_number": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "manufacturer",
+        "model",
+        "sw_version"
+      ],
+      "additionalProperties": false
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "enum": [
+              "brightness",
+              "warmth",
+              "keep_awake",
+              "refresh_screen",
+              "battery_level",
+              "charging",
+              "frontlight_on",
+              "power_state",
+              "cpu_usage",
+              "cpu_load",
+              "memory_total",
+              "memory_free",
+              "storage_total",
+              "storage_free",
+              "rootfs_used_percent",
+              "clock_offset",
+              "uptime",
+              "battery_temperature",
+              "battery_voltage",
+              "battery_current",
+              "wifi_signal",
+              "ip_address",
+              "ssid",
+              "mac_address",
+              "kernel_version"
+            ]
+          },
+          "min": {
+            "type": "number"
+          },
+          "max": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "contract",
+    "agent_version",
+    "device",
+    "capabilities"
+  ],
+  "additionalProperties": false
+}

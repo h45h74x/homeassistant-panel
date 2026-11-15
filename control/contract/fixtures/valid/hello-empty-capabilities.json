@@ -1,0 +1,11 @@
+{
+  "contract": 1,
+  "agent_version": "0.1.0",
+  "device": {
+    "name": "Kindle",
+    "manufacturer": "Amazon",
+    "model": "EY21",
+    "sw_version": "5.16.2"
+  },
+  "capabilities": []
+}
