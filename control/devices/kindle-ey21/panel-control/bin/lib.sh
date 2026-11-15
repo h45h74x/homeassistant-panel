@@ -2,7 +2,7 @@
 # Contract: control/contract/README.md ("Parsing commands without jq").
 
 json_str() {
-  printf '"%s"' "$(printf '%s' "$1" | tr -d '\t\r\n' | sed 's/\\/\\\\/g; s/"/\\"/g')"
+  printf '"%s"' "$(printf '%s' "$1" | tr -d '\001-\037\177' | sed 's/\\/\\\\/g; s/"/\\"/g')"
 }
 
 # shortcut: a numeric-looking text value (e.g. "3") is sent as a number, upgrade if a text capability needs it.
@@ -10,7 +10,10 @@ json_val() {
   case "$1" in
     '') printf 'null' ;;
     true|false) printf '%s' "$1" ;;
-    *) if printf '%s' "$1" | grep -q '^-\{0,1\}[0-9][0-9]*\(\.[0-9][0-9]*\)\{0,1\}$'; then
+    *) # newline would let grep match one line only, so route it to json_str
+       case "$1" in *"
+"*) json_str "$1"; return ;; esac
+       if printf '%s' "$1" | grep -q -e '^-\{0,1\}0\(\.[0-9][0-9]*\)\{0,1\}$' -e '^-\{0,1\}[1-9][0-9]*\(\.[0-9][0-9]*\)\{0,1\}$'; then
          printf '%s' "$1"
        else
          json_str "$1"
@@ -38,8 +41,7 @@ parse_config() {
 
 # _trim <text>: sets _T without leading/trailing space or tab
 _trim() {
-  _T=${1#"${1%%[! 	]*}"}
-  _T=${_T%"${_T##*[! 	]}"}
+  _T=$(printf '%s' "$1" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
 }
 
 # load_config <file>: parsed line by line, never sourced or eval'd.

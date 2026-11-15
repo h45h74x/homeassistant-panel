@@ -9,7 +9,13 @@ nl='
 '
 
 assert_eq json_str "\"a\\\"b\\\\c\"" "$(json_str 'a"b\c')"
-assert_eq json_str_ws '"ab"' "$(json_str "a	b$nl")"
+tab=$(printf '\t')
+assert_eq json_str_ws '"ab"' "$(json_str "a${tab}b$nl")"
+assert_eq json_str_ctl '"ab"' "$(json_str "$(printf 'a\001\177b')")"
+assert_eq json_str_order '"\\\""' "$(json_str '\"')"
+assert_eq val_nl '"5abc"' "$(json_val "5${nl}abc")"
+for v in 0 -0 0.5 -12 1.5 40.5; do assert_eq "val_num_$v" "$v" "$(json_val $v)"; done
+for v in 007 +5 .5 5. 1e3 0x10 -; do assert_eq "val_str_$v" "\"$v\"" "$(json_val $v)"; done
 assert_eq val_true true "$(json_val true)"
 assert_eq val_int -12 "$(json_val -12)"
 assert_eq val_float 1.5 "$(json_val 1.5)"
@@ -59,6 +65,12 @@ assert_eq no_token_msg 1 "$(load_config "$TMP/c6" | grep -c .)"
 printf 'url=ha:8123\ntoken=t\n' > "$TMP/c7"
 assert_eq bad_url_rc 1 "$(load_config "$TMP/c7" >/dev/null; echo $?)"
 assert_eq missing_file_rc 1 "$(load_config "$TMP/nope" >/dev/null; echo $?)"
+
+printf 'url=http://h\ntoken\t=\t\tT1\t\n\tdevice_name\t=\t"N M"\t\nsend_serial=1' > "$TMP/c8"
+load_config "$TMP/c8"
+assert_eq tab_token T1 "$CFG_TOKEN"
+assert_eq tab_key_name "N M" "$CFG_NAME"
+assert_eq nonl_last 1 "$CFG_SERIAL"
 
 echo "$N assertions, $FAILS failed"
 [ $FAILS = 0 ]
